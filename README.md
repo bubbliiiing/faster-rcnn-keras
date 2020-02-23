@@ -19,7 +19,7 @@ classes = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat"
 8、运行train.py即可开始训练。  
 
 # Reference
-https://github.com/qqwweee/keras-yolo3/
-https://github.com/pierluigiferrari/ssd_keras
-https://github.com/kuhung/SSD_keras
-https://github.com/jinfagang/keras_frcnn
+https://github.com/qqwweee/keras-yolo3/  
+https://github.com/pierluigiferrari/ssd_keras  
+https://github.com/kuhung/SSD_keras  
+https://github.com/jinfagang/keras_frcnn  
