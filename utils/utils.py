@@ -114,7 +114,7 @@ class BBoxUtility(object):
         
         # 找到对应的先验框
         assigned_priors = self.priors[assign_mask]
-        # 逆向编码，将真实框转化为Retinanet预测结果的格式
+        # 逆向编码，将真实框转化为FasterRCNN预测结果的格式
         # 先计算真实框的中心与长宽
         box_center = 0.5 * (box[:2] + box[2:])
         box_wh = box[2:] - box[:2]
@@ -124,7 +124,7 @@ class BBoxUtility(object):
         assigned_priors_wh = (assigned_priors[:, 2:4] -
                               assigned_priors[:, :2])
         
-        # 逆向求取ssd应该有的预测结果
+        # 逆向求取FasterRCNN应该有的预测结果
         encoded_box[:, :2][assign_mask] = box_center - assigned_priors_center
         encoded_box[:, :2][assign_mask] /= assigned_priors_wh
         encoded_box[:, :2][assign_mask] *= 4
