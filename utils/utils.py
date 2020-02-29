@@ -6,44 +6,6 @@ import numpy as np
 import math
 
 
-
-def letterbox_image(image, size):
-    iw, ih = image.size
-    w, h = size
-    scale = min(w/iw, h/ih)
-    nw = int(iw*scale)
-    nh = int(ih*scale)
-
-    image = image.resize((nw,nh), Image.BICUBIC)
-    new_image = Image.new('RGB', size, (128,128,128))
-    new_image.paste(image, ((w-nw)//2, (h-nh)//2))
-    x_offset,y_offset = (w-nw)//2/300, (h-nh)//2/300
-    return new_image,x_offset,y_offset
-
-def retinanet_correct_boxes(top, left, bottom, right, input_shape, image_shape):
-    new_shape = image_shape*np.min(input_shape/image_shape)
-
-    offset = (input_shape-new_shape)/2./input_shape
-    scale = input_shape/new_shape
-
-    box_yx = np.concatenate(((top+bottom)/2,(left+right)/2),axis=-1)
-    box_hw = np.concatenate((bottom-top,right-left),axis=-1)
-
-    box_yx = (box_yx - offset) * scale
-    box_hw *= scale
-
-    box_mins = box_yx - (box_hw / 2.)
-    box_maxes = box_yx + (box_hw / 2.)
-    boxes =  np.concatenate([
-        box_mins[:, 0:1],
-        box_mins[:, 1:2],
-        box_maxes[:, 0:1],
-        box_maxes[:, 1:2]
-    ],axis=-1)
-    print(np.shape(boxes))
-    boxes *= np.concatenate([image_shape, image_shape],axis=-1)
-    return boxes
-
 class BBoxUtility(object):
     def __init__(self, priors=None, overlap_threshold=0.7,ignore_threshold=0.3,
                  nms_thresh=0.7, top_k=300):
