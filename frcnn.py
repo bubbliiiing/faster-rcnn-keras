@@ -10,7 +10,7 @@ from keras import backend as K
 from keras.layers import Input
 from keras.applications.imagenet_utils import preprocess_input
 from PIL import Image,ImageFont, ImageDraw
-from utils.utils import BBoxUtility,letterbox_image,retinanet_correct_boxes
+from utils.utils import BBoxUtility,letterbox_image
 from utils.anchors import get_anchors
 from utils.config import Config
 import copy
