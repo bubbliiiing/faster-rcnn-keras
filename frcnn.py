@@ -30,7 +30,7 @@ class FRCNN(object):
             return "Unrecognized attribute name '" + n + "'"
 
     #---------------------------------------------------#
-    #   初始化yolo
+    #   初始化faster RCNN
     #---------------------------------------------------#
     def __init__(self, **kwargs):
         self.__dict__.update(self._defaults)
@@ -117,6 +117,12 @@ class FRCNN(object):
         R[:, 3] -= R[:, 1]
         base_layer = preds[2]
         
+        delete_line = []
+        for i,r in enumerate(R):
+            if r[2] < 1 or r[3] < 1:
+                delete_line.append(i)
+        R = np.delete(R,delete_line,axis=0)
+        
         bboxes = []
         probs = []
         labels = []
@@ -175,6 +181,9 @@ class FRCNN(object):
                 probs.append(np.max(P_cls[0, ii, :]))
                 labels.append(label)
 
+        if len(bboxes)==0:
+            return old_image
+        
         # 筛选出其中得分高于confidence的框
         labels = np.array(labels)
         probs = np.array(probs)
@@ -185,8 +194,6 @@ class FRCNN(object):
         boxes[:,3] = boxes[:,3]*self.config.rpn_stride/height
         results = np.array(self.bbox_util.nms_for_out(np.array(labels),np.array(probs),np.array(boxes),self.num_classes-1,0.4))
         
-        if len(boxes)==0:
-            return old_image
         top_label_indices = results[:,0]
         top_conf = results[:,1]
         boxes = results[:,2:]
