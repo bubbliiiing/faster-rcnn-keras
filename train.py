@@ -28,7 +28,7 @@ if __name__ == "__main__":
     NUM_CLASSES = 21
     EPOCH = 100
     EPOCH_LENGTH = 2000
-    bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_max_overlap)
+    bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
 
     model_rpn, model_classifier,model_all = get_model(config,NUM_CLASSES)
