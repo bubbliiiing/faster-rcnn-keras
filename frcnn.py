@@ -77,11 +77,13 @@ class FRCNN(object):
     
     def get_img_output_length(self, width, height):
         def get_output_length(input_length):
-            input_length += 6
+            # input_length += 6
             filter_sizes = [7, 3, 1, 1]
+            padding = [3,1,0,0]
             stride = 2
-            for filter_size in filter_sizes:
-                input_length = (input_length - filter_size + stride) // stride
+            for i in range(4):
+                # input_length = (input_length - filter_size + stride) // stride
+                input_length = (input_length+2*padding[i]-filter_sizes[i]) // stride + 1
             return input_length
         return get_output_length(width), get_output_length(height) 
     
