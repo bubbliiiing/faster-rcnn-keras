@@ -202,6 +202,7 @@ class Generator(object):
             box_w = box[:, 2] - box[:, 0]
             box_h = box[:, 3] - box[:, 1]
             box = box[np.logical_and(box_w>1, box_h>1)] # discard invalid box
+            box_data = np.zeros((len(box),5))
             box_data[:len(box)] = box
         if len(box) == 0:
             return image_data, []
