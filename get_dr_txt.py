@@ -134,7 +134,7 @@ class mAP_FRCNN(FRCNN):
             predicted_class = self.class_names[int(c)-1]
             score = str(top_conf[i])
 
-            top, left, bottom, right = boxes[i]
+            left, top, right, bottom = boxes[i]
             f.write("%s %s %s %s %s %s\n" % (predicted_class, score[:6], str(int(left)), str(int(top)), str(int(right)),str(int(bottom))))
 
         f.close()
