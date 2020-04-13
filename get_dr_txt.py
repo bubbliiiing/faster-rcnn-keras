@@ -131,7 +131,7 @@ class mAP_FRCNN(FRCNN):
         boxes[:,3] = boxes[:,3]*old_height
 
         for i, c in enumerate(top_label_indices):
-            predicted_class = self.class_names[int(c)-1]
+            predicted_class = self.class_names[int(c)]
             score = str(top_conf[i])
 
             left, top, right, bottom = boxes[i]
