@@ -206,7 +206,7 @@ class FRCNN(object):
 
         font = ImageFont.truetype(font='model_data/simhei.ttf',size=np.floor(3e-2 * np.shape(image)[1] + 0.5).astype('int32'))
         
-        thickness = (np.shape(old_image)[0] + np.shape(old_image)[1]) // width
+        thickness = (np.shape(old_image)[0] + np.shape(old_image)[1]) // old_width * 2
         image = old_image
         for i, c in enumerate(top_label_indices):
             predicted_class = self.class_names[int(c)]
