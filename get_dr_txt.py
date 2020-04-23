@@ -1,3 +1,8 @@
+#----------------------------------------------------#
+#   获取测试集的detection-result和images-optional
+#   具体视频教程可查看
+#   https://www.bilibili.com/video/BV1zE411u7Vw
+#----------------------------------------------------#
 from keras.layers import Input
 from frcnn import FRCNN
 from PIL import Image
