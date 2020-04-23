@@ -1,3 +1,8 @@
+#----------------------------------------------------#
+#   获取测试集的ground-truth
+#   具体视频教程可查看
+#   https://www.bilibili.com/video/BV1zE411u7Vw
+#----------------------------------------------------#
 import sys
 import os
 import glob
