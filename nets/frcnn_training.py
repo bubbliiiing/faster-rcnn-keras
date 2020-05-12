@@ -142,7 +142,7 @@ class Generator(object):
         self.solid = solid
         self.solid_shape = solid_shape
         
-    def get_random_data(self, annotation_line, random=True, jitter=.1, hue=.1, sat=1.1, val=1.1, proc_img=True):
+    def get_random_data(self, annotation_line, jitter=.3, hue=.1, sat=1.5, val=1.5):
         '''r实时数据增强的随机预处理'''
         line = annotation_line.split()
         image = Image.open(line[0])
