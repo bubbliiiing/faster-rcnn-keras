@@ -146,14 +146,14 @@ class FRCNN(object):
             [P_cls, P_regr] = self.model_classifier.predict([base_layer,ROIs])
 
             for ii in range(P_cls.shape[1]):
-                if np.max(P_cls[0, ii, :]) < self.confidence or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
+                if np.max(P_cls[0, ii, :-1]) < self.confidence:
                     continue
 
-                label = np.argmax(P_cls[0, ii, :])
+                label = np.argmax(P_cls[0, ii, :-1])
 
                 (x, y, w, h) = ROIs[0, ii, :]
 
-                cls_num = np.argmax(P_cls[0, ii, :])
+                cls_num = np.argmax(P_cls[0, ii, :-1])
 
                 (tx, ty, tw, th) = P_regr[0, ii, 4*cls_num:4*(cls_num+1)]
                 tx /= self.config.classifier_regr_std[0]
@@ -180,7 +180,7 @@ class FRCNN(object):
                 y2 = int(round(y2))
 
                 bboxes.append([x1,y1,x2,y2])
-                probs.append(np.max(P_cls[0, ii, :]))
+                probs.append(np.max(P_cls[0, ii, :-1]))
                 labels.append(label)
 
         if len(bboxes)==0:
