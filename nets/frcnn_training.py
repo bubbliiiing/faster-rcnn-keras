@@ -250,14 +250,20 @@ class Generator(object):
                 num_pos = len(classification[mask_pos])
                 if num_pos > num_regions/2:
                     val_locs = random.sample(range(num_pos), int(num_pos - num_regions/2))
-                    classification[mask_pos][val_locs] = -1
-                    regression[mask_pos][val_locs,-1] = -1
-                
+                    temp_classification = classification[mask_pos]
+                    temp_regression = regression[mask_pos]
+                    temp_classification[val_locs] = -1
+                    temp_regression[val_locs,-1] = -1
+                    classification[mask_pos] = temp_classification
+                    regression[mask_pos] = temp_regression
+                    
                 mask_neg = classification[:]==0
                 num_neg = len(classification[mask_neg])
                 if len(classification[mask_neg]) + num_pos > num_regions:
-                    val_locs = random.sample(range(num_neg), int(num_neg - num_pos))
-                    classification[mask_neg][val_locs] = -1
+                    val_locs = random.sample(range(num_neg), int(num_neg + num_pos - num_regions))
+                    temp_classification = classification[mask_neg]
+                    temp_classification[val_locs] = -1
+                    classification[mask_neg] = temp_classification
                     
                 classification = np.reshape(classification,[-1,1])
                 regression = np.reshape(regression,[-1,5])
