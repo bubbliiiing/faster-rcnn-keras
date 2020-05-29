@@ -259,6 +259,8 @@ class Generator(object):
                     
                 mask_neg = classification[:]==0
                 num_neg = len(classification[mask_neg])
+                mask_pos = classification[:]>0
+                num_pos = len(classification[mask_pos])
                 if len(classification[mask_neg]) + num_pos > num_regions:
                     val_locs = random.sample(range(num_neg), int(num_neg + num_pos - num_regions))
                     temp_classification = classification[mask_neg]
