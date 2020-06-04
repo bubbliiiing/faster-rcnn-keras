@@ -95,7 +95,7 @@ if __name__ == "__main__":
         
         progbar = generic_utils.Progbar(EPOCH_LENGTH) 
         print('Epoch {}/{}'.format(i + 1, EPOCH))
-        while True:
+        for iteration, batch in enumerate(rpn_train):
             if len(rpn_accuracy_rpn_monitor) == EPOCH_LENGTH and config.verbose:
                 mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor))/len(rpn_accuracy_rpn_monitor)
                 rpn_accuracy_rpn_monitor = []
@@ -103,7 +103,7 @@ if __name__ == "__main__":
                 if mean_overlapping_bboxes == 0:
                     print('RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
             
-            X, Y, boxes = next(rpn_train)
+            X, Y, boxes = batch[0],batch[1],batch[2]
             
             loss_rpn = model_rpn.train_on_batch(X,Y)
             write_log(callback, ['rpn_cls_loss', 'rpn_reg_loss'], loss_rpn, train_step)
