@@ -28,8 +28,8 @@ if __name__ == "__main__":
     NUM_CLASSES = 21
     EPOCH = 100
     EPOCH_LENGTH = 2000
-    # 训练自己的数据可以考虑从1e-4开始训练
-    Learning_rate = 1e-5
+    # 开始使用1e-4训练，收敛的时候使用1e-5训练
+    Learning_rate = 1e-4
     bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
 
