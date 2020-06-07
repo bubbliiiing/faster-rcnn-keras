@@ -26,9 +26,11 @@ def write_log(callback, names, logs, batch_no):
 if __name__ == "__main__":
     config = Config()
     NUM_CLASSES = 21
+    # 训练100世代
     EPOCH = 100
+    # 每个世代训练2000步
     EPOCH_LENGTH = 2000
-    # 开始使用1e-4训练，收敛的时候使用1e-5训练
+    # 开始使用1e-4训练，20世代后使用1e-5训练
     Learning_rate = 1e-4
     bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
