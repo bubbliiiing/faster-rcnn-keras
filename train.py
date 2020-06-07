@@ -28,6 +28,8 @@ if __name__ == "__main__":
     NUM_CLASSES = 21
     EPOCH = 100
     EPOCH_LENGTH = 2000
+    # 训练自己的数据可以考虑从1e-4开始训练
+    Learning_rate = 1e-5
     bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
 
@@ -55,13 +57,13 @@ if __name__ == "__main__":
     model_rpn.compile(loss={
                 'regression'    : smooth_l1(),
                 'classification': cls_loss()
-            },optimizer=keras.optimizers.Adam(lr=1e-5)
+            },optimizer=keras.optimizers.Adam(lr=Learning_rate)
     )
     model_classifier.compile(loss=[
         class_loss_cls, 
         class_loss_regr(NUM_CLASSES-1)
         ], 
-        metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=1e-5)
+        metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=Learning_rate)
     )
     model_all.compile(optimizer='sgd', loss='mae')
 
@@ -83,13 +85,13 @@ if __name__ == "__main__":
             model_rpn.compile(loss={
                         'regression'    : smooth_l1(),
                         'classification': cls_loss()
-                    },optimizer=keras.optimizers.Adam(lr=1e-6)
+                    },optimizer=keras.optimizers.Adam(lr=Learning_rate/10)
             )
             model_classifier.compile(loss=[
                 class_loss_cls, 
                 class_loss_regr(NUM_CLASSES-1)
                 ], 
-                metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=1e-6)
+                metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=Learning_rate/10)
             )
             print("Learning rate decrease")
         
