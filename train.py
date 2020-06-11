@@ -35,6 +35,9 @@ if __name__ == "__main__":
     bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
 
+    #-------------------------------------------#
+    #   权值文件的下载请看README
+    #-------------------------------------------#
     model_rpn, model_classifier,model_all = get_model(config,NUM_CLASSES)
     base_net_weights = "model_data/voc_weights.h5"
     
