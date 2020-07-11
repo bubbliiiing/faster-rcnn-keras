@@ -23,6 +23,10 @@ def write_log(callback, names, logs, batch_no):
         callback.writer.add_summary(summary, batch_no)
         callback.writer.flush()
 
+#----------------------------------------------------#
+#   检测精度mAP和pr曲线计算参考视频
+#   https://www.bilibili.com/video/BV1zE411u7Vw
+#----------------------------------------------------#
 if __name__ == "__main__":
     config = Config()
     NUM_CLASSES = 21
@@ -35,9 +39,11 @@ if __name__ == "__main__":
     bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
 
-    #-------------------------------------------#
-    #   权值文件的下载请看README
-    #-------------------------------------------#
+    #------------------------------------------------------#
+    #   权值文件请看README，百度网盘下载
+    #   训练自己的数据集时提示维度不匹配正常
+    #   预测的东西都不一样了自然维度不匹配
+    #------------------------------------------------------#
     model_rpn, model_classifier,model_all = get_model(config,NUM_CLASSES)
     base_net_weights = "model_data/voc_weights.h5"
     
@@ -85,7 +91,6 @@ if __name__ == "__main__":
     print('Starting training')
 
     for i in range(EPOCH):
-
         if i == 20:
             model_rpn.compile(loss={
                         'regression'    : smooth_l1(),
