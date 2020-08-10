@@ -7,6 +7,7 @@ class Config:
         self.anchor_box_scales = [128, 256, 512]
         self.anchor_box_ratios = [[1, 1], [1, 2], [2, 1]]
         self.rpn_stride = 16
+        # 视频中rois的值为32，修改成128效果更好
         self.num_rois = 128
         self.verbose = True
         self.model_path = "logs/model.h5"
