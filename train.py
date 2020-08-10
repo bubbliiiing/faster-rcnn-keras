@@ -32,9 +32,7 @@ if __name__ == "__main__":
     NUM_CLASSES = 21
     # 训练100世代
     EPOCH = 100
-    # 每个世代训练2000步
-    EPOCH_LENGTH = 2000
-    # 开始使用1e-4训练，20世代后使用1e-5训练
+    # 开始使用1e-4训练，每过10个世代降低为原来的1/2
     Learning_rate = 1e-4
     bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
     annotation_path = '2007_train.txt'
@@ -56,6 +54,10 @@ if __name__ == "__main__":
     np.random.seed(10101)
     np.random.shuffle(lines)
     np.random.seed(None)
+
+    # 每个世代训练数据集长度的步数
+    # 根据数据集大小进行指定
+    EPOCH_LENGTH = len(lines)
 
     gen = Generator(bbox_util, lines, NUM_CLASSES, solid=True)
     rpn_train = gen.generate()
@@ -91,19 +93,20 @@ if __name__ == "__main__":
     print('Starting training')
 
     for i in range(EPOCH):
-        if i == 20:
+        if i % 10 == 0 and i != 0:
             model_rpn.compile(loss={
                         'regression'    : smooth_l1(),
                         'classification': cls_loss()
-                    },optimizer=keras.optimizers.Adam(lr=Learning_rate/10)
+                    },optimizer=keras.optimizers.Adam(lr=Learning_rate/2)
             )
             model_classifier.compile(loss=[
                 class_loss_cls, 
                 class_loss_regr(NUM_CLASSES-1)
                 ], 
-                metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=Learning_rate/10)
+                metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=Learning_rate/2)
             )
-            print("Learning rate decrease")
+            Learning_rate = Learning_rate/2
+            print("Learning rate decrease to " + str(Learning_rate))
         
         progbar = generic_utils.Progbar(EPOCH_LENGTH) 
         print('Epoch {}/{}'.format(i + 1, EPOCH))
@@ -169,7 +172,7 @@ if __name__ == "__main__":
             write_log(callback, ['detection_cls_loss', 'detection_reg_loss', 'detection_acc'], loss_class, train_step)
 
 
-            losses[iter_num, 0]  = loss_rpn[1]
+            losses[iter_num, 0] = loss_rpn[1]
             losses[iter_num, 1] = loss_rpn[2]
             losses[iter_num, 2] = loss_class[1]
             losses[iter_num, 3] = loss_class[2]

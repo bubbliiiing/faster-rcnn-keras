@@ -7,7 +7,7 @@ class Config:
         self.anchor_box_scales = [128, 256, 512]
         self.anchor_box_ratios = [[1, 1], [1, 2], [2, 1]]
         self.rpn_stride = 16
-        self.num_rois = 32
+        self.num_rois = 128
         self.verbose = True
         self.model_path = "logs/model.h5"
         self.rpn_min_overlap = 0.3

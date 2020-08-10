@@ -23,7 +23,7 @@ class FRCNN(object):
     _defaults = {
         "model_path": 'model_data/voc_weights.h5',
         "classes_path": 'model_data/voc_classes.txt',
-        "confidence": 0.7,
+        "confidence": 0.5,
     }
 
     @classmethod
