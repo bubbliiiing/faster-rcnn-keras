@@ -13,7 +13,7 @@ keras==2.1.5
 
 ### 文件下载
 训练所需的voc_weights.h5可以去百度网盘下载  
-链接: https://pan.baidu.com/s/1xDRhw0U4dWfy_2rceH-YnA 提取码: cm3q  
+链接: https://pan.baidu.com/s/1RHmEGshBcW7Dw49PriZEfQ 提取码: afi9 
 
 ### 训练步骤
 1、本文使用VOC格式进行训练。  
