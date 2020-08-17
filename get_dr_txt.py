@@ -115,7 +115,7 @@ class mAP_FRCNN(FRCNN):
                 labels.append(label)
                 
         if len(bboxes)==0:
-            return old_image
+            return 
         
         # 筛选出其中得分高于confidence的框
         labels = np.array(labels)
