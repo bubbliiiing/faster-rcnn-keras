@@ -235,8 +235,6 @@ class BBoxUtility(object):
                 results[-1] = results[-1][argsort]
                 # 选出置信度最大的keep_top_k个
                 results[-1] = results[-1][:keep_top_k]
-        # 获得，在所有预测结果里面，置信度比较高的框
-        # 还有，利用先验框和Retinanet的预测结果，处理获得了真实框（预测框）的位置
         return results
 
     def nms_for_out(self,all_labels,all_confs,all_bboxes,num_classes,nms):
