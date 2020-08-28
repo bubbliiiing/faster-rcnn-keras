@@ -22,27 +22,6 @@ class BBoxUtility(object):
                                                 iou_threshold=self._nms_thresh)
         self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
 
-    @property
-    def nms_thresh(self):
-        return self._nms_thresh
-
-    @nms_thresh.setter
-    def nms_thresh(self, value):
-        self._nms_thresh = value
-        self.nms = tf.image.non_max_suppression(self.boxes, self.scores,
-                                                self._top_k,
-                                                iou_threshold=self._nms_thresh)
-
-    @property
-    def top_k(self):
-        return self._top_k
-
-    @top_k.setter
-    def top_k(self, value):
-        self._top_k = value
-        self.nms = tf.image.non_max_suppression(self.boxes, self.scores,
-                                                self._top_k,
-                                                iou_threshold=self._nms_thresh)
 
     def iou(self, box):
         # 计算出每个真实框与所有的先验框的iou
@@ -193,9 +172,7 @@ class BBoxUtility(object):
         decode_bbox = np.minimum(np.maximum(decode_bbox, 0.0), 1.0)
         return decode_bbox
 
-    def detection_out(self, predictions, mbox_priorbox, num_classes, keep_top_k=300,
-                        confidence_threshold=0.5):
-        
+    def detection_out(self, predictions, mbox_priorbox, num_classes, confidence_threshold=0.5):
         # 网络预测的结果
         # 置信度
         mbox_conf = predictions[0]
@@ -233,8 +210,6 @@ class BBoxUtility(object):
                 results[-1] = np.array(results[-1])
                 argsort = np.argsort(results[-1][:, 1])[::-1]
                 results[-1] = results[-1][argsort]
-                # 选出置信度最大的keep_top_k个
-                results[-1] = results[-1][:keep_top_k]
         return results
 
     def nms_for_out(self,all_labels,all_confs,all_bboxes,num_classes,nms):
