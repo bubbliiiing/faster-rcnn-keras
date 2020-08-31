@@ -18,7 +18,7 @@ keras==2.1.5
 
 ### 预测步骤
 #### 1、使用预训练权重
-a、下载完库后解压，在百度网盘下载RFB_weights.h5，放入model_data，运行predict.py，输入  
+a、下载完库后解压，在百度网盘下载voc_weights.h5，放入model_data，运行predict.py，输入  
 ```python
 img/street.jpg
 ```
