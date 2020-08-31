@@ -52,9 +52,6 @@ classes = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat"
 ```
 6、此时会生成对应的2007_train.txt，每一行对应其**图片位置**及其**真实框的位置**。  
 7、**在训练前需要务必在model_data下新建一个txt文档，文档中输入需要分的类**，示例如下：   
-```python
-classes_path = 'model_data/new_classes.txt'    
-```
 model_data/new_classes.txt文件内容为：   
 ```python
 cat
