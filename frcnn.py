@@ -102,7 +102,7 @@ class FRCNN(object):
         width,height = get_new_img_size(old_width,old_height)
 
 
-        image = image.resize([width,height])
+        image = image.resize([width,height], Image.BICUBIC)
         photo = np.array(image,dtype = np.float64)
 
         # 图片预处理，归一化
