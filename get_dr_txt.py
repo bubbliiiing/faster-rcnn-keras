@@ -10,6 +10,7 @@ from keras.applications.imagenet_utils import preprocess_input
 from utils.anchors import get_anchors
 from utils.utils import BBoxUtility
 from nets.frcnn_training import get_new_img_size
+from tqdm import tqdm
 import math
 import copy
 import numpy as np
@@ -19,17 +20,16 @@ class mAP_FRCNN(FRCNN):
     #   检测图片
     #---------------------------------------------------#
     def detect_image(self,image_id,image):
-        self.confidence = 0.05
+        self.confidence = 0.01
         f = open("./input/detection-results/"+image_id+".txt","w") 
 
         image_shape = np.array(np.shape(image)[0:2])
         old_width = image_shape[1]
         old_height = image_shape[0]
-        old_image = copy.deepcopy(image)
         width,height = get_new_img_size(old_width,old_height)
 
 
-        image = image.resize([width,height])
+        image = image.resize([width,height], Image.BICUBIC)
         photo = np.array(image,dtype = np.float64)
 
         # 图片预处理，归一化
@@ -125,7 +125,8 @@ class mAP_FRCNN(FRCNN):
         boxes[:,1] = boxes[:,1]*self.config.rpn_stride/height
         boxes[:,2] = boxes[:,2]*self.config.rpn_stride/width
         boxes[:,3] = boxes[:,3]*self.config.rpn_stride/height
-        results = np.array(self.bbox_util.nms_for_out(np.array(labels),np.array(probs),np.array(boxes),self.num_classes-1,0.4))
+        results = np.array(self.bbox_util.nms_for_out(np.array(labels),np.array(probs),np.array(boxes),self.num_classes-1,self.iou))
+        
         
         top_label_indices = results[:,0]
         top_conf = results[:,1]
@@ -155,13 +156,10 @@ if not os.path.exists("./input/detection-results"):
 if not os.path.exists("./input/images-optional"):
     os.makedirs("./input/images-optional")
 
-
-for image_id in image_ids:
+for image_id in tqdm(image_ids):
     image_path = "./VOCdevkit/VOC2007/JPEGImages/"+image_id+".jpg"
     image = Image.open(image_path)
     # image.save("./input/images-optional/"+image_id+".jpg")
     frcnn.detect_image(image_id,image)
-    print(image_id," done!")
     
-
 print("Conversion completed!")
