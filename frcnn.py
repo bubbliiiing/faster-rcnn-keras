@@ -21,9 +21,10 @@ import math
 #--------------------------------------------#
 class FRCNN(object):
     _defaults = {
-        "model_path": 'model_data/voc_weights.h5',
-        "classes_path": 'model_data/voc_classes.txt',
-        "confidence": 0.5,
+        "model_path"    : 'model_data/voc_weights.h5',
+        "classes_path"  : 'model_data/voc_classes.txt',
+        "confidence"    : 0.5,
+        "iou"           : 0.3
     }
 
     @classmethod
@@ -198,7 +199,7 @@ class FRCNN(object):
         boxes[:,1] = boxes[:,1]*self.config.rpn_stride/height
         boxes[:,2] = boxes[:,2]*self.config.rpn_stride/width
         boxes[:,3] = boxes[:,3]*self.config.rpn_stride/height
-        results = np.array(self.bbox_util.nms_for_out(np.array(labels),np.array(probs),np.array(boxes),self.num_classes-1,0.4))
+        results = np.array(self.bbox_util.nms_for_out(np.array(labels),np.array(probs),np.array(boxes),self.num_classes-1,self.iou))
         
         top_label_indices = results[:,0]
         top_conf = results[:,1]
