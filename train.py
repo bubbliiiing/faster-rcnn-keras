@@ -46,8 +46,8 @@ if __name__ == "__main__":
     base_net_weights = "model_data/voc_weights.h5"
     
     model_all.summary()
-    model_rpn.load_weights(base_net_weights,by_name=True)
-    model_classifier.load_weights(base_net_weights,by_name=True)
+    model_rpn.load_weights(base_net_weights, by_name=True, skip_mismatch=True)
+    model_classifier.load_weights(base_net_weights, by_name=True, skip_mismatch=True)
 
     with open(annotation_path) as f: 
         lines = f.readlines()
