@@ -18,7 +18,6 @@ from nets.frcnn_training import get_new_img_size
 from utils.anchors import get_anchors
 from utils.utils import BBoxUtility
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1" 
 class mAP_FRCNN(FRCNN):
     #---------------------------------------------------#
     #   检测图片
