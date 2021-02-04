@@ -1,18 +1,21 @@
-from __future__ import division
-from nets.frcnn import get_model
-from nets.frcnn_training import cls_loss,smooth_l1,Generator,get_img_output_length,class_loss_cls,class_loss_regr
+import time
 
-from utils.config import Config
-from utils.utils import BBoxUtility
-from utils.roi_helpers import calc_iou
-
-from keras.utils import generic_utils
-from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 import keras
 import numpy as np
-import time 
 import tensorflow as tf
+from keras import backend as K
+from keras.callbacks import TensorBoard
+from keras.utils import generic_utils
+from tqdm import tqdm
+
+from nets.frcnn import get_model
+from nets.frcnn_training import (Generator, class_loss_cls, class_loss_regr,
+                                 cls_loss, get_img_output_length, smooth_l1)
 from utils.anchors import get_anchors
+from utils.config import Config
+from utils.roi_helpers import calc_iou
+from utils.utils import BBoxUtility
+from nets.resnet import BatchNormalization
 
 def write_log(callback, names, logs, batch_no):
     for name, value in zip(names, logs):
@@ -23,203 +26,210 @@ def write_log(callback, names, logs, batch_no):
         callback.writer.add_summary(summary, batch_no)
         callback.writer.flush()
 
+def fit_one_epoch(model_rpn,model_all,epoch,epoch_size,epoch_size_val,gen,genval,Epoch,callback):
+    total_loss = 0
+    rpn_loc_loss = 0
+    rpn_cls_loss = 0
+    roi_loc_loss = 0
+    roi_cls_loss = 0
+
+    val_toal_loss = 0
+    with tqdm(total=epoch_size,desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
+        for iteration, batch in enumerate(gen):
+            if iteration >= epoch_size:
+                break
+            X, Y, boxes = batch[0], batch[1], batch[2]
+            P_rpn = model_rpn.predict_on_batch(X)
+            
+            height, width, _ = np.shape(X[0])
+            base_feature_width, base_feature_height = get_img_output_length(width, height)
+            anchors = get_anchors([base_feature_width, base_feature_height], width, height)
+            results = bbox_util.detection_out_rpn(P_rpn, anchors)
+
+            roi_inputs = []
+            out_classes = []
+            out_regrs = []
+            for i in range(len(X)):
+                R = results[i][:, 1:]
+                X2, Y1, Y2 = calc_iou(R, config, boxes[i], NUM_CLASSES)
+                roi_inputs.append(X2)
+                out_classes.append(Y1)
+                out_regrs.append(Y2)
+
+            loss_class = model_all.train_on_batch([X, np.array(roi_inputs)], [Y[0], Y[1], np.array(out_classes), np.array(out_regrs)])
+            
+            write_log(callback, ['total_loss','rpn_cls_loss', 'rpn_reg_loss', 'detection_cls_loss', 'detection_reg_loss'], loss_class, iteration)
+
+            rpn_cls_loss += loss_class[1]
+            rpn_loc_loss += loss_class[2]
+            roi_cls_loss += loss_class[3]
+            roi_loc_loss += loss_class[4]
+            total_loss = rpn_loc_loss + rpn_cls_loss + roi_loc_loss + roi_cls_loss
+
+            pbar.set_postfix(**{'total'    : total_loss / (iteration + 1),  
+                                'rpn_cls'  : rpn_cls_loss / (iteration + 1),   
+                                'rpn_loc'  : rpn_loc_loss / (iteration + 1),  
+                                'roi_cls'  : roi_cls_loss / (iteration + 1),    
+                                'roi_loc'  : roi_loc_loss / (iteration + 1), 
+                                'lr'       : K.get_value(model_rpn.optimizer.lr)})
+            pbar.update(1)
+
+    print('Start Validation')
+    with tqdm(total=epoch_size_val, desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
+        for iteration, batch in enumerate(genval):
+            if iteration >= epoch_size_val:
+                break
+            X, Y, boxes = batch[0], batch[1], batch[2]
+            P_rpn = model_rpn.predict_on_batch(X)
+            
+            height, width, _ = np.shape(X[0])
+            base_feature_width, base_feature_height = get_img_output_length(width, height)
+            anchors = get_anchors([base_feature_width, base_feature_height], width, height)
+            results = bbox_util.detection_out_rpn(P_rpn, anchors)
+
+            roi_inputs = []
+            out_classes = []
+            out_regrs = []
+            for i in range(len(X)):
+                R = results[i][:, 1:]
+                X2, Y1, Y2 = calc_iou(R, config, boxes[i], NUM_CLASSES)
+                roi_inputs.append(X2)
+                out_classes.append(Y1)
+                out_regrs.append(Y2)
+
+            loss_class = model_all.test_on_batch([X, np.array(roi_inputs)], [Y[0], Y[1], np.array(out_classes), np.array(out_regrs)])
+
+            val_toal_loss += loss_class[0]
+            pbar.set_postfix(**{'total' : val_toal_loss / (iteration + 1)})
+            pbar.update(1)
+
+    print('Finish Validation')
+    print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
+    print('Total Loss: %.4f || Val Loss: %.4f ' % (total_loss/(epoch_size+1),val_toal_loss/(epoch_size_val+1)))
+
+    print('Saving state, iter:', str(epoch+1))
+    model_all.save_weights('logs/Epoch%d-Total_Loss%.4f-Val_Loss%.4f.h5'%((epoch+1),total_loss/(epoch_size+1),val_toal_loss/(epoch_size_val+1)))
+    return 
+
 #----------------------------------------------------#
 #   检测精度mAP和pr曲线计算参考视频
 #   https://www.bilibili.com/video/BV1zE411u7Vw
 #----------------------------------------------------#
 if __name__ == "__main__":
     config = Config()
+    #----------------------------------------------------#
+    #   训练之前一定要修改NUM_CLASSES
+    #   修改成所需要区分的类的个数+1。
+    #----------------------------------------------------#
     NUM_CLASSES = 21
-    # 训练100世代
-    EPOCH = 100
-    # 开始使用1e-4训练，每过10个世代降低为原来的1/2
-    Learning_rate = 1e-4
-    bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap)
-    annotation_path = '2007_train.txt'
+    #-----------------------------------------------------#
+    #   input_shape是输入图片的大小，默认为800,800,3
+    #   随着输入图片的增大，占用显存会增大
+    #   视频上为600,600,3，多次训练测试后发现800,800,3更优
+    #-----------------------------------------------------#
+    input_shape = [800, 800, 3]
 
+    model_rpn, model_all = get_model(config, NUM_CLASSES)
     #------------------------------------------------------#
     #   权值文件请看README，百度网盘下载
     #   训练自己的数据集时提示维度不匹配正常
     #   预测的东西都不一样了自然维度不匹配
     #------------------------------------------------------#
-    model_rpn, model_classifier,model_all = get_model(config,NUM_CLASSES)
     base_net_weights = "model_data/voc_weights.h5"
-    
-    model_all.summary()
-    model_rpn.load_weights(base_net_weights, by_name=True, skip_mismatch=True)
-    model_classifier.load_weights(base_net_weights, by_name=True, skip_mismatch=True)
+    model_rpn.load_weights(base_net_weights, by_name=True)
+    model_all.load_weights(base_net_weights, by_name=True)
 
-    with open(annotation_path) as f: 
+    bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap,top_k=config.num_RPN_train_pre)
+
+    #--------------------------------------------#
+    #   训练参数的设置
+    #--------------------------------------------#
+    logging = TensorBoard(log_dir="logs")
+    callback = logging
+    callback.set_model(model_all)
+
+    annotation_path = '2007_train.txt'
+    #----------------------------------------------------------------------#
+    #   验证集的划分在train.py代码里面进行
+    #   2007_test.txt和2007_val.txt里面没有内容是正常的。训练不会使用到。
+    #   当前划分方式下，验证集和训练集的比例为1:9
+    #----------------------------------------------------------------------#
+    val_split = 0.1
+    with open(annotation_path) as f:
         lines = f.readlines()
     np.random.seed(10101)
     np.random.shuffle(lines)
     np.random.seed(None)
-
-    # 每个世代训练数据集长度的步数
-    # 根据数据集大小进行指定
-    EPOCH_LENGTH = len(lines)
-
-    gen = Generator(bbox_util, lines, NUM_CLASSES, solid=True)
-    rpn_train = gen.generate()
-    log_dir = "logs"
-    # 训练参数设置
-    logging = TensorBoard(log_dir=log_dir)
-    callback = logging
-    callback.set_model(model_all)
+    num_val = int(len(lines)*val_split)
+    num_train = len(lines) - num_val
     
-    model_rpn.compile(loss={
-                'regression'    : smooth_l1(),
-                'classification': cls_loss()
-            },optimizer=keras.optimizers.Adam(lr=Learning_rate)
-    )
-    model_classifier.compile(loss=[
-        class_loss_cls, 
-        class_loss_regr(NUM_CLASSES-1)
-        ], 
-        metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=Learning_rate)
-    )
-    model_all.compile(optimizer='sgd', loss='mae')
-
-    # 初始化参数
-    iter_num = 0
-    train_step = 0
-    losses = np.zeros((EPOCH_LENGTH, 5))
-    rpn_accuracy_rpn_monitor = []
-    rpn_accuracy_for_epoch = [] 
-    start_time = time.time()
-    # 最佳loss
-    best_loss = np.Inf
-    # 数字到类的映射
-    print('Starting training')
-
-    for i in range(EPOCH):
-        if i % 10 == 0 and i != 0:
-            model_rpn.compile(loss={
-                        'regression'    : smooth_l1(),
-                        'classification': cls_loss()
-                    },optimizer=keras.optimizers.Adam(lr=Learning_rate/2)
-            )
-            model_classifier.compile(loss=[
-                class_loss_cls, 
-                class_loss_regr(NUM_CLASSES-1)
-                ], 
-                metrics={'dense_class_{}'.format(NUM_CLASSES): 'accuracy'},optimizer=keras.optimizers.Adam(lr=Learning_rate/2)
-            )
-            Learning_rate = Learning_rate/2
-            print("Learning rate decrease to " + str(Learning_rate))
+    # #------------------------------------------------------#
+    # #   主干特征提取网络特征通用，使用预训练权重可以加快训练
+    # #   Init_Epoch为起始世代
+    # #   Interval_Epoch为中间训练的世代
+    # #   Epoch总训练世代
+    # #   提示OOM或者显存不足请调小Batch_size
+    # #------------------------------------------------------#
+    # if True:
+    #     lr = 1e-4
+    #     Batch_size = 2
+    #     Init_Epoch = 0
+    #     Interval_Epoch = 50
         
-        progbar = generic_utils.Progbar(EPOCH_LENGTH) 
-        print('Epoch {}/{}'.format(i + 1, EPOCH))
-        for iteration, batch in enumerate(rpn_train):
-            if len(rpn_accuracy_rpn_monitor) == EPOCH_LENGTH and config.verbose:
-                mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor))/len(rpn_accuracy_rpn_monitor)
-                rpn_accuracy_rpn_monitor = []
-                print('Average number of overlapping bounding boxes from RPN = {} for {} previous iterations'.format(mean_overlapping_bboxes, EPOCH_LENGTH))
-                if mean_overlapping_bboxes == 0:
-                    print('RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
-            
-            X, Y, boxes = batch[0],batch[1],batch[2]
-            
-            loss_rpn = model_rpn.train_on_batch(X,Y)
-            write_log(callback, ['rpn_cls_loss', 'rpn_reg_loss'], loss_rpn, train_step)
-            P_rpn = model_rpn.predict_on_batch(X)
-            height,width,_ = np.shape(X[0])
-            anchors = get_anchors(get_img_output_length(width,height),width,height)
-            
-            # 将预测结果进行解码
-            results = bbox_util.detection_out(P_rpn,anchors,1, confidence_threshold=0)
-            
-            R = results[0][:, 2:]
+    #     model_rpn.compile(
+    #         loss={
+    #             'classification': cls_loss(),
+    #             'regression'    : smooth_l1()
+    #         }, optimizer=keras.optimizers.Adam(lr=lr)
+    #     )
+    #     model_all.compile(loss={
+    #             'classification'                        : cls_loss(),
+    #             'regression'                            : smooth_l1(),
+    #             'dense_class_{}'.format(NUM_CLASSES)    : class_loss_cls,
+    #             'dense_regress_{}'.format(NUM_CLASSES)  : class_loss_regr(NUM_CLASSES-1)
+    #         }, optimizer=keras.optimizers.Adam(lr=lr)
+    #     )
 
-            X2, Y1, Y2, IouS = calc_iou(R, config, boxes[0], width, height, NUM_CLASSES)
+    #     gen = Generator(bbox_util, lines[:num_train], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
+    #     gen_val = Generator(bbox_util, lines[num_train:], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
 
-            if X2 is None:
-                rpn_accuracy_rpn_monitor.append(0)
-                rpn_accuracy_for_epoch.append(0)
-                continue
-            
-            neg_samples = np.where(Y1[0, :, -1] == 1)
-            pos_samples = np.where(Y1[0, :, -1] == 0)
+    #     epoch_size = num_train // Batch_size
+    #     epoch_size_val = num_val // Batch_size
+        
+    #     for epoch in range(Init_Epoch, Interval_Epoch):
+    #         fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Interval_Epoch, callback)
+    #         lr = lr*0.92
+    #         K.set_value(model_rpn.optimizer.lr, lr)
+    #         K.set_value(model_all.optimizer.lr, lr)
 
-            if len(neg_samples) > 0:
-                neg_samples = neg_samples[0]
-            else:
-                neg_samples = []
+    if True:
+        lr = 1e-5
+        Batch_size = 2
+        Interval_Epoch = 50
+        Epoch = 100
+        
+        model_rpn.compile(
+            loss={
+                'classification': cls_loss(),
+                'regression'    : smooth_l1()
+            }, optimizer=keras.optimizers.Adam(lr=lr)
+        )
+        model_all.compile(loss={
+                'classification'                        : cls_loss(),
+                'regression'                            : smooth_l1(),
+                'dense_class_{}'.format(NUM_CLASSES)    : class_loss_cls,
+                'dense_regress_{}'.format(NUM_CLASSES)  : class_loss_regr(NUM_CLASSES-1)
+            }, optimizer=keras.optimizers.Adam(lr=lr)
+        )
+        
+        gen = Generator(bbox_util, lines[:num_train], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
+        gen_val = Generator(bbox_util, lines[num_train:], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
 
-            if len(pos_samples) > 0:
-                pos_samples = pos_samples[0]
-            else:
-                pos_samples = []
-
-            rpn_accuracy_rpn_monitor.append(len(pos_samples))
-            rpn_accuracy_for_epoch.append((len(pos_samples)))
-
-            if len(neg_samples)==0:
-                continue
-
-            if len(pos_samples) < config.num_rois//2:
-                selected_pos_samples = pos_samples.tolist()
-            else:
-                selected_pos_samples = np.random.choice(pos_samples, config.num_rois//2, replace=False).tolist()
-            try:
-                selected_neg_samples = np.random.choice(neg_samples, config.num_rois - len(selected_pos_samples), replace=False).tolist()
-            except:
-                selected_neg_samples = np.random.choice(neg_samples, config.num_rois - len(selected_pos_samples), replace=True).tolist()
-            
-            sel_samples = selected_pos_samples + selected_neg_samples
-            loss_class = model_classifier.train_on_batch([X, X2[:, sel_samples, :]], [Y1[:, sel_samples, :], Y2[:, sel_samples, :]])
-
-            write_log(callback, ['detection_cls_loss', 'detection_reg_loss', 'detection_acc'], loss_class, train_step)
-
-
-            losses[iter_num, 0] = loss_rpn[1]
-            losses[iter_num, 1] = loss_rpn[2]
-            losses[iter_num, 2] = loss_class[1]
-            losses[iter_num, 3] = loss_class[2]
-            losses[iter_num, 4] = loss_class[3]
-
-
-            train_step += 1
-            iter_num += 1
-            progbar.update(iter_num, [('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
-                                  ('detector_cls', np.mean(losses[:iter_num, 2])), ('detector_regr', np.mean(losses[:iter_num, 3]))])
-
-            
-            if iter_num == EPOCH_LENGTH:
-                loss_rpn_cls = np.mean(losses[:, 0])
-                loss_rpn_regr = np.mean(losses[:, 1])
-                loss_class_cls = np.mean(losses[:, 2])
-                loss_class_regr = np.mean(losses[:, 3])
-                class_acc = np.mean(losses[:, 4])
-
-                mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
-                rpn_accuracy_for_epoch = []
-
-                if config.verbose:
-                    print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(mean_overlapping_bboxes))
-                    print('Classifier accuracy for bounding boxes from RPN: {}'.format(class_acc))
-                    print('Loss RPN classifier: {}'.format(loss_rpn_cls))
-                    print('Loss RPN regression: {}'.format(loss_rpn_regr))
-                    print('Loss Detector classifier: {}'.format(loss_class_cls))
-                    print('Loss Detector regression: {}'.format(loss_class_regr))
-                    print('Elapsed time: {}'.format(time.time() - start_time))
-
-                
-                curr_loss = loss_rpn_cls + loss_rpn_regr + loss_class_cls + loss_class_regr
-                iter_num = 0
-                start_time = time.time()
-
-                write_log(callback,
-                        ['Elapsed_time', 'mean_overlapping_bboxes', 'mean_rpn_cls_loss', 'mean_rpn_reg_loss',
-                        'mean_detection_cls_loss', 'mean_detection_reg_loss', 'mean_detection_acc', 'total_loss'],
-                        [time.time() - start_time, mean_overlapping_bboxes, loss_rpn_cls, loss_rpn_regr,
-                        loss_class_cls, loss_class_regr, class_acc, curr_loss],i)
-                    
-                
-                if config.verbose:
-                    print('The best loss is {}. The current loss is {}. Saving weights'.format(best_loss,curr_loss))
-                if curr_loss < best_loss:
-                    best_loss = curr_loss
-                model_all.save_weights(log_dir+"/epoch{:03d}-loss{:.3f}-rpn{:.3f}-roi{:.3f}".format(i,curr_loss,loss_rpn_cls+loss_rpn_regr,loss_class_cls+loss_class_regr)+".h5")
-                
-                break
+        epoch_size = num_train // Batch_size
+        epoch_size_val = num_val // Batch_size
+        
+        for epoch in range(Interval_Epoch, Epoch):
+            fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Epoch, callback)
+            lr = lr*0.92
+            K.set_value(model_rpn.optimizer.lr, lr)
+            K.set_value(model_all.optimizer.lr, lr)

@@ -1,7 +1,8 @@
-import numpy as np
 import keras
-from utils.config import Config
 import matplotlib.pyplot as plt
+import numpy as np
+
+from utils.config import Config
 
 config = Config()
 

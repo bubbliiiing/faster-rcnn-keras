@@ -1,117 +1,128 @@
-import numpy as np
-import pdb
-import math
 import copy
+import math
+import pdb
 import time
 
-def union(au, bu, area_intersection):
-    area_a = (au[2] - au[0]) * (au[3] - au[1])
-    area_b = (bu[2] - bu[0]) * (bu[3] - bu[1])
-    area_union = area_a + area_b - area_intersection
-    return area_union
+import numpy as np
 
+def bbox_iou(bbox_a, bbox_b):
+    if bbox_a.shape[1] != 4 or bbox_b.shape[1] != 4:
+        print(bbox_a, bbox_b)
+        raise IndexError
+    tl = np.maximum(bbox_a[:, None, :2], bbox_b[:, :2])
+    br = np.minimum(bbox_a[:, None, 2:], bbox_b[:, 2:])
+    area_i = np.prod(br - tl, axis=2) * (tl < br).all(axis=2)
+    area_a = np.prod(bbox_a[:, 2:] - bbox_a[:, :2], axis=1)
+    area_b = np.prod(bbox_b[:, 2:] - bbox_b[:, :2], axis=1)
+    return area_i / (area_a[:, None] + area_b - area_i)
 
-def intersection(ai, bi):
-    x = max(ai[0], bi[0])
-    y = max(ai[1], bi[1])
-    w = min(ai[2], bi[2]) - x
-    h = min(ai[3], bi[3]) - y
-    if w < 0 or h < 0:
-        return 0
-    return w*h
+def bbox2loc(src_bbox, dst_bbox):
+    width = src_bbox[:, 2] - src_bbox[:, 0]
+    height = src_bbox[:, 3] - src_bbox[:, 1]
+    ctr_x = src_bbox[:, 0] + 0.5 * width
+    ctr_y = src_bbox[:, 1] + 0.5 * height
 
-def iou(a, b):
-    if a[0] >= a[2] or a[1] >= a[3] or b[0] >= b[2] or b[1] >= b[3]:
-        return 0.0
+    base_width = dst_bbox[:, 2] - dst_bbox[:, 0]
+    base_height = dst_bbox[:, 3] - dst_bbox[:, 1]
+    base_ctr_x = dst_bbox[:, 0] + 0.5 * base_width
+    base_ctr_y = dst_bbox[:, 1] + 0.5 * base_height
 
-    area_i = intersection(a, b)
-    area_u = union(a, b, area_i)
+    eps = np.finfo(height.dtype).eps
+    width = np.maximum(width, eps)
+    height = np.maximum(height, eps)
 
-    return float(area_i) / float(area_u + 1e-6)
+    dx = (base_ctr_x - ctr_x) / width
+    dy = (base_ctr_y - ctr_y) / height
+    dw = np.log(base_width / width)
+    dh = np.log(base_height / height)
 
-def calc_iou(R, config, all_boxes, width, height, num_classes):
-    # print(all_boxes)
-    bboxes = all_boxes[:,:4]
-    gta = np.zeros((len(bboxes), 4))
-    for bbox_num, bbox in enumerate(bboxes):
-        gta[bbox_num, 0] = int(round(bbox[0]*width/config.rpn_stride))
-        gta[bbox_num, 1] = int(round(bbox[1]*height/config.rpn_stride))
-        gta[bbox_num, 2] = int(round(bbox[2]*width/config.rpn_stride))
-        gta[bbox_num, 3] = int(round(bbox[3]*height/config.rpn_stride))
-    x_roi = []
-    y_class_num = []
-    y_class_regr_coords = []
-    y_class_regr_label = []
-    IoUs = []
-    # print(gta)
-    for ix in range(R.shape[0]):
-        x1 = R[ix, 0]*width/config.rpn_stride
-        y1 = R[ix, 1]*height/config.rpn_stride
-        x2 = R[ix, 2]*width/config.rpn_stride
-        y2 = R[ix, 3]*height/config.rpn_stride
-        
-        x1 = int(round(x1))
-        y1 = int(round(y1))
-        x2 = int(round(x2))
-        y2 = int(round(y2))
-        # print([x1, y1, x2, y2])
-        best_iou = 0.0
-        best_bbox = -1
-        for bbox_num in range(len(bboxes)):
-            curr_iou = iou([gta[bbox_num, 0], gta[bbox_num, 1], gta[bbox_num, 2], gta[bbox_num, 3]], [x1, y1, x2, y2])
-            if curr_iou > best_iou:
-                best_iou = curr_iou
-                best_bbox = bbox_num
-        # print(best_iou)
-        if best_iou < config.classifier_min_overlap:
-            continue
-        else:
-            w = x2 - x1
-            h = y2 - y1
-            x_roi.append([x1, y1, w, h])
-            IoUs.append(best_iou)
+    loc = np.vstack((dx, dy, dw, dh)).transpose()
+    return loc
 
-            if config.classifier_min_overlap <= best_iou < config.classifier_max_overlap:
-                label = -1
-            elif config.classifier_max_overlap <= best_iou:
-                
-                label = int(all_boxes[best_bbox,-1])
-                cxg = (gta[best_bbox, 0] + gta[best_bbox, 2]) / 2.0
-                cyg = (gta[best_bbox, 1] + gta[best_bbox, 3]) / 2.0
+def calc_iou(R, config, all_boxes, num_classes):
+    bboxes = all_boxes[:, :4]
+    label = all_boxes[:, 4]
+    R = np.concatenate([R, bboxes], axis=0)
+    # ----------------------------------------------------- #
+    #   计算建议框和真实框的重合程度
+    # ----------------------------------------------------- #
+    iou = bbox_iou(R, bboxes)
+    
+    if len(bboxes)==0:
+        gt_assignment = np.zeros(len(R), np.int32)
+        max_iou = np.zeros(len(R))
+        gt_roi_label = np.zeros(len(R))
+    else:
+        #---------------------------------------------------------#
+        #   获得每一个建议框最对应的真实框的iou  [num_roi, ]
+        #---------------------------------------------------------#
+        max_iou = iou.max(axis=1)
+        #---------------------------------------------------------#
+        #   获得每一个建议框最对应的真实框  [num_roi, ]
+        #---------------------------------------------------------#
+        gt_assignment = iou.argmax(axis=1)
+        #---------------------------------------------------------#
+        #   真实框的标签
+        #---------------------------------------------------------#
+        gt_roi_label = label[gt_assignment] 
 
-                cx = x1 + w / 2.0
-                cy = y1 + h / 2.0
+    #----------------------------------------------------------------#
+    #   满足建议框和真实框重合程度大于neg_iou_thresh_high的作为负样本
+    #   将正样本的数量限制在self.pos_roi_per_image以内
+    #----------------------------------------------------------------#
+    pos_index = np.where(max_iou >= config.classifier_max_overlap)[0]
+    pos_roi_per_this_image = int(min(config.num_rois//2, pos_index.size))
+    if pos_index.size > 0:
+        pos_index = np.random.choice(pos_index, size=pos_roi_per_this_image, replace=False)
 
-                tx = (cxg - cx) / float(w)
-                ty = (cyg - cy) / float(h)
-                tw = np.log((gta[best_bbox, 2] - gta[best_bbox, 0]) / float(w))
-                th = np.log((gta[best_bbox, 3] - gta[best_bbox, 1]) / float(h))
-            else:
-                print('roi = {}'.format(best_iou))
-                raise RuntimeError
-        # print(label)
-        class_label = num_classes * [0]
-        class_label[label] = 1
-        y_class_num.append(copy.deepcopy(class_label))
-        coords = [0] * 4 * (num_classes - 1)
-        labels = [0] * 4 * (num_classes - 1)
-        if label != -1:
-            label_pos = 4 * label
-            sx, sy, sw, sh = config.classifier_regr_std
-            coords[label_pos:4+label_pos] = [sx*tx, sy*ty, sw*tw, sh*th]
-            labels[label_pos:4+label_pos] = [1, 1, 1, 1]
-            y_class_regr_coords.append(copy.deepcopy(coords))
-            y_class_regr_label.append(copy.deepcopy(labels))
-        else:
-            y_class_regr_coords.append(copy.deepcopy(coords))
-            y_class_regr_label.append(copy.deepcopy(labels))
+    #-----------------------------------------------------------------------------------------------------#
+    #   满足建议框和真实框重合程度小于neg_iou_thresh_high大于neg_iou_thresh_low作为负样本
+    #   将正样本的数量和负样本的数量的总和固定成self.n_sample
+    #-----------------------------------------------------------------------------------------------------#
+    neg_index = np.where((max_iou < config.classifier_max_overlap) & (max_iou >= config.classifier_min_overlap))[0]
+    neg_roi_per_this_image = config.num_rois - pos_roi_per_this_image
+    if neg_roi_per_this_image > neg_index.size:
+        neg_index = np.random.choice(neg_index, size=neg_roi_per_this_image, replace=True)
+    else:
+        neg_index = np.random.choice(neg_index, size=neg_roi_per_this_image, replace=False)
+    
+    #---------------------------------------------------------#
+    #   sample_roi      [n_sample, ]
+    #   gt_roi_loc      [n_sample, 4]
+    #   gt_roi_label    [n_sample, ]
+    #---------------------------------------------------------#
+    keep_index = np.append(pos_index, neg_index)
 
-    if len(x_roi) == 0:
-        return None, None, None, None
+    sample_roi = R[keep_index]
 
-    X = np.array(x_roi)
-    # print(X)
-    Y1 = np.array(y_class_num)
-    Y2 = np.concatenate([np.array(y_class_regr_label),np.array(y_class_regr_coords)],axis=1)
+    if len(bboxes)!=0:
+        gt_roi_loc = bbox2loc(sample_roi, bboxes[gt_assignment[keep_index]])
+        gt_roi_loc = gt_roi_loc * np.array(config.classifier_regr_std)
+    else:
+        gt_roi_loc = np.zeros_like(sample_roi)
 
-    return np.expand_dims(X, axis=0), np.expand_dims(Y1, axis=0), np.expand_dims(Y2, axis=0), IoUs
+    gt_roi_label = gt_roi_label[keep_index]
+    gt_roi_label[pos_roi_per_this_image:] = num_classes - 1
+    
+    #---------------------------------------------------------#
+    #   X       [n_sample, 4]
+    #   Y1      [n_sample, num_classes]
+    #   Y2      [n_sample, (num_clssees-1)*8]
+    #---------------------------------------------------------#
+    X = np.zeros_like(sample_roi)
+    X[:, [0, 1, 2, 3]] = sample_roi[:, [1, 0, 3, 2]]
+
+    Y1 = np.eye(num_classes)[np.array(gt_roi_label,np.int32)]
+
+    y_class_regr_label = np.zeros([np.shape(gt_roi_loc)[0], num_classes-1, 4])
+    y_class_regr_coords = np.zeros([np.shape(gt_roi_loc)[0], num_classes-1, 4])
+
+    y_class_regr_label[np.arange(np.shape(gt_roi_loc)[0])[:pos_roi_per_this_image], np.array(gt_roi_label[:pos_roi_per_this_image], np.int32)] = 1
+    y_class_regr_coords[np.arange(np.shape(gt_roi_loc)[0])[:pos_roi_per_this_image], np.array(gt_roi_label[:pos_roi_per_this_image], np.int32)] = \
+        gt_roi_loc[:pos_roi_per_this_image]
+    y_class_regr_label = np.reshape(y_class_regr_label, [np.shape(gt_roi_loc)[0], -1])
+    y_class_regr_coords = np.reshape(y_class_regr_coords, [np.shape(gt_roi_loc)[0], -1])
+
+    Y2 = np.concatenate([np.array(y_class_regr_label), np.array(y_class_regr_coords)],axis=1)
+    
+    return X, Y1, Y2
