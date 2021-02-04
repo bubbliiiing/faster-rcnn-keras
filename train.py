@@ -163,44 +163,44 @@ if __name__ == "__main__":
     num_val = int(len(lines)*val_split)
     num_train = len(lines) - num_val
     
-    # #------------------------------------------------------#
-    # #   主干特征提取网络特征通用，使用预训练权重可以加快训练
-    # #   Init_Epoch为起始世代
-    # #   Interval_Epoch为中间训练的世代
-    # #   Epoch总训练世代
-    # #   提示OOM或者显存不足请调小Batch_size
-    # #------------------------------------------------------#
-    # if True:
-    #     lr = 1e-4
-    #     Batch_size = 2
-    #     Init_Epoch = 0
-    #     Interval_Epoch = 50
+    #------------------------------------------------------#
+    #   主干特征提取网络特征通用，使用预训练权重可以加快训练
+    #   Init_Epoch为起始世代
+    #   Interval_Epoch为中间训练的世代
+    #   Epoch总训练世代
+    #   提示OOM或者显存不足请调小Batch_size
+    #------------------------------------------------------#
+    if True:
+        lr = 1e-4
+        Batch_size = 2
+        Init_Epoch = 0
+        Interval_Epoch = 50
         
-    #     model_rpn.compile(
-    #         loss={
-    #             'classification': cls_loss(),
-    #             'regression'    : smooth_l1()
-    #         }, optimizer=keras.optimizers.Adam(lr=lr)
-    #     )
-    #     model_all.compile(loss={
-    #             'classification'                        : cls_loss(),
-    #             'regression'                            : smooth_l1(),
-    #             'dense_class_{}'.format(NUM_CLASSES)    : class_loss_cls,
-    #             'dense_regress_{}'.format(NUM_CLASSES)  : class_loss_regr(NUM_CLASSES-1)
-    #         }, optimizer=keras.optimizers.Adam(lr=lr)
-    #     )
+        model_rpn.compile(
+            loss={
+                'classification': cls_loss(),
+                'regression'    : smooth_l1()
+            }, optimizer=keras.optimizers.Adam(lr=lr)
+        )
+        model_all.compile(loss={
+                'classification'                        : cls_loss(),
+                'regression'                            : smooth_l1(),
+                'dense_class_{}'.format(NUM_CLASSES)    : class_loss_cls,
+                'dense_regress_{}'.format(NUM_CLASSES)  : class_loss_regr(NUM_CLASSES-1)
+            }, optimizer=keras.optimizers.Adam(lr=lr)
+        )
 
-    #     gen = Generator(bbox_util, lines[:num_train], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
-    #     gen_val = Generator(bbox_util, lines[num_train:], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
+        gen = Generator(bbox_util, lines[:num_train], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
+        gen_val = Generator(bbox_util, lines[num_train:], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
 
-    #     epoch_size = num_train // Batch_size
-    #     epoch_size_val = num_val // Batch_size
+        epoch_size = num_train // Batch_size
+        epoch_size_val = num_val // Batch_size
         
-    #     for epoch in range(Init_Epoch, Interval_Epoch):
-    #         fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Interval_Epoch, callback)
-    #         lr = lr*0.92
-    #         K.set_value(model_rpn.optimizer.lr, lr)
-    #         K.set_value(model_all.optimizer.lr, lr)
+        for epoch in range(Init_Epoch, Interval_Epoch):
+            fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Interval_Epoch, callback)
+            lr = lr*0.92
+            K.set_value(model_rpn.optimizer.lr, lr)
+            K.set_value(model_all.optimizer.lr, lr)
 
     if True:
         lr = 1e-5
