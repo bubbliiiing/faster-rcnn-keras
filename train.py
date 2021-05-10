@@ -5,17 +5,17 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras.callbacks import TensorBoard
-from keras.utils import generic_utils
 from tqdm import tqdm
 
 from nets.frcnn import get_model
-from nets.frcnn_training import (Generator, class_loss_cls, class_loss_regr,
-                                 cls_loss, get_img_output_length, smooth_l1)
+from nets.frcnn_training import (Generator, LossHistory, class_loss_cls,
+                                 class_loss_regr, cls_loss,
+                                 get_img_output_length, smooth_l1)
 from utils.anchors import get_anchors
 from utils.config import Config
 from utils.roi_helpers import calc_iou
 from utils.utils import BBoxUtility
-from nets.resnet import BatchNormalization
+
 
 def write_log(callback, names, logs, batch_no):
     for name, value in zip(names, logs):
@@ -103,6 +103,7 @@ def fit_one_epoch(model_rpn,model_all,epoch,epoch_size,epoch_size_val,gen,genval
             pbar.set_postfix(**{'total' : val_toal_loss / (iteration + 1)})
             pbar.update(1)
 
+    loss_history.append_loss(total_loss/(epoch_size+1), val_toal_loss/(epoch_size_val+1))
     print('Finish Validation')
     print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
     print('Total Loss: %.4f || Val Loss: %.4f ' % (total_loss/(epoch_size+1),val_toal_loss/(epoch_size_val+1)))
@@ -147,6 +148,7 @@ if __name__ == "__main__":
     logging = TensorBoard(log_dir="logs")
     callback = logging
     callback.set_model(model_all)
+    loss_history = LossHistory("logs/")
 
     annotation_path = '2007_train.txt'
     #----------------------------------------------------------------------#
@@ -195,6 +197,9 @@ if __name__ == "__main__":
 
         epoch_size = num_train // Batch_size
         epoch_size_val = num_val // Batch_size
+
+        if epoch_size == 0 or epoch_size_val == 0:
+            raise ValueError("数据集过小，无法进行训练，请扩充数据集。")
         
         for epoch in range(Init_Epoch, Interval_Epoch):
             fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Interval_Epoch, callback)
@@ -227,6 +232,9 @@ if __name__ == "__main__":
 
         epoch_size = num_train // Batch_size
         epoch_size_val = num_val // Batch_size
+
+        if epoch_size == 0 or epoch_size_val == 0:
+            raise ValueError("数据集过小，无法进行训练，请扩充数据集。")
         
         for epoch in range(Interval_Epoch, Epoch):
             fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Epoch, callback)

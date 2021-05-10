@@ -1,5 +1,9 @@
 class Config:
     def __init__(self):
+        #-------------------------------------------------------------------#
+        #   如果小目标检测效果不佳，可以修改self.anchor_box_scales
+        #   self.anchor_box_scales代表先验框的大小，改小后有利于小目标检测
+        #-------------------------------------------------------------------#
         self.anchor_box_scales = [128, 256, 512]
         self.anchor_box_ratios = [[1, 1], [1, 2], [2, 1]]
         self.rpn_stride = 16
