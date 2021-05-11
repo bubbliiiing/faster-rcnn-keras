@@ -1,9 +1,11 @@
+from keras.initializers import random_normal
 from keras.layers import (Conv2D, Dense, Flatten, Input, Reshape,
                           TimeDistributed)
 from keras.models import Model
 
 from nets.resnet import ResNet50, classifier_layers
 from nets.RoiPoolingConv import RoiPoolingConv
+
 
 #----------------------------------------------------#
 #   创建建议框网络
@@ -13,13 +15,13 @@ def get_rpn(base_layers, num_anchors):
     #----------------------------------------------------#
     #   利用一个512通道的3x3卷积进行特征整合
     #----------------------------------------------------#
-    x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(base_layers)
+    x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer=random_normal(stddev=0.02), name='rpn_conv1')(base_layers)
 
     #----------------------------------------------------#
     #   利用一个1x1卷积调整通道数，获得预测结果
     #----------------------------------------------------#
-    x_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_out_class')(x)
-    x_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_out_regress')(x)
+    x_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer=random_normal(stddev=0.02), name='rpn_out_class')(x)
+    x_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer=random_normal(stddev=0.02), name='rpn_out_regress')(x)
     
     x_class = Reshape((-1,1),name="classification")(x_class)
     x_regr = Reshape((-1,4),name="regression")(x_regr)
@@ -40,9 +42,9 @@ def get_classifier(base_layers, input_rois, nb_classes=21, pooling_regions = 14)
     out = TimeDistributed(Flatten())(out)
 
     # num_rois, 1, 1, 1024 -> num_rois, nb_classes
-    out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'), name='dense_class_{}'.format(nb_classes))(out)
+    out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer=random_normal(stddev=0.02)), name='dense_class_{}'.format(nb_classes))(out)
     # num_rois, 1, 1, 1024 -> num_rois, 4 * (nb_classes-1)
-    out_regr = TimeDistributed(Dense(4 * (nb_classes-1), activation='linear', kernel_initializer='zero'), name='dense_regress_{}'.format(nb_classes))(out)
+    out_regr = TimeDistributed(Dense(4 * (nb_classes-1), activation='linear', kernel_initializer=random_normal(stddev=0.02)), name='dense_regress_{}'.format(nb_classes))(out)
     return [out_class, out_regr]
 
 def get_model(config, num_classes):
