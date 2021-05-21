@@ -6,8 +6,7 @@ from keras import backend as K
 from keras import initializers, layers, regularizers
 from keras.engine import InputSpec, Layer
 from keras.initializers import random_normal
-from keras.layers import (Activation, Add, AveragePooling2D, Conv2D, Dense,
-                          Flatten, Input, MaxPooling2D, TimeDistributed,
+from keras.layers import (Activation, Add, AveragePooling2D, Conv2D, MaxPooling2D, TimeDistributed,
                           ZeroPadding2D)
 
 
@@ -221,7 +220,6 @@ def conv_block_td(input_tensor, kernel_size, filters, stage, block, strides=(2, 
     x = Add()([x, shortcut])
     x = Activation('relu')(x)
     return x
-
 
 def classifier_layers(x):
     # num_rois, 14, 14, 1024 -> num_rois, 7, 7, 2048

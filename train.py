@@ -53,7 +53,7 @@ def fit_one_epoch(model_rpn,model_all,epoch,epoch_size,epoch_size_val,gen,genval
                 roi_inputs.append(X2)
                 out_classes.append(Y1)
                 out_regrs.append(Y2)
-
+            
             loss_class = model_all.train_on_batch([X, np.array(roi_inputs)], [Y[0], Y[1], np.array(out_classes), np.array(out_regrs)])
             
             write_log(callback, ['total_loss','rpn_cls_loss', 'rpn_reg_loss', 'detection_cls_loss', 'detection_reg_loss'], loss_class, iteration)
@@ -201,7 +201,7 @@ if __name__ == "__main__":
         
         for epoch in range(Init_Epoch, Interval_Epoch):
             fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Interval_Epoch, callback)
-            lr = lr*0.92
+            lr = lr*0.95
             K.set_value(model_rpn.optimizer.lr, lr)
             K.set_value(model_all.optimizer.lr, lr)
 
@@ -236,6 +236,6 @@ if __name__ == "__main__":
         
         for epoch in range(Interval_Epoch, Epoch):
             fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Epoch, callback)
-            lr = lr*0.92
+            lr = lr*0.95
             K.set_value(model_rpn.optimizer.lr, lr)
             K.set_value(model_all.optimizer.lr, lr)

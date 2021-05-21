@@ -1,13 +1,11 @@
 import math
 
-import keras
 import numpy as np
 import tensorflow as tf
-from PIL import Image
 
 
 class BBoxUtility(object):
-    def __init__(self, overlap_threshold=0.7, ignore_threshold=0.3, rpn_pre_boxes=6000, rpn_nms=0.7, classifier_nms=0.3, top_k=300):
+    def __init__(self, overlap_threshold=0.7, ignore_threshold=0.3, rpn_pre_boxes=12000, rpn_nms=0.7, classifier_nms=0.3, top_k=300):
         self.overlap_threshold = overlap_threshold
         self.ignore_threshold = ignore_threshold
         self.rpn_pre_boxes = rpn_pre_boxes
@@ -207,7 +205,7 @@ class BBoxUtility(object):
             argsort_index = np.argsort(c_confs)[::-1]
             c_confs = c_confs[argsort_index[:self.rpn_pre_boxes]]
             decode_bbox = decode_bbox[argsort_index[:self.rpn_pre_boxes], :]
-
+            
             # 进行iou的非极大抑制
             feed_dict = {self.boxes: decode_bbox, self.scores: c_confs}
             idx = self.sess.run(self.nms_out_rpn, feed_dict=feed_dict)

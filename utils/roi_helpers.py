@@ -1,8 +1,3 @@
-import copy
-import math
-import pdb
-import time
-
 import numpy as np
 
 def bbox_iou(bbox_a, bbox_b):
