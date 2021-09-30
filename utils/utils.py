@@ -70,14 +70,13 @@ class BBoxUtility(object):
         assigned_priors_wh = (assigned_priors[:, 2:4] -
                               assigned_priors[:, :2])
         
-        #------------------------------------------------#
-        #   逆向求取efficientdet应该有的预测结果
-        #   先求取中心的预测结果，再求取宽高的预测结果
-        #------------------------------------------------#
+        # 逆向求取FasterRCNN应该有的预测结果
         encoded_box[:, :2][assign_mask] = box_center - assigned_priors_center
         encoded_box[:, :2][assign_mask] /= assigned_priors_wh
+        encoded_box[:, :2][assign_mask] *= 4
 
         encoded_box[:, 2:4][assign_mask] = np.log(box_wh / assigned_priors_wh)
+        encoded_box[:, 2:4][assign_mask] *= 4
 
         return encoded_box.ravel(), ignored_box.ravel()
 
