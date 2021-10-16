@@ -192,9 +192,6 @@ class FRCNNDatasets():
         
         return image_data, box
 
-    def on_epoch_begin(self):
-        shuffle(self.annotation_lines)
-
     def iou(self, box):
         #---------------------------------------------#
         #   计算出每个真实框与所有的先验框的iou
