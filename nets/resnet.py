@@ -6,8 +6,8 @@ from keras import backend as K
 from keras import initializers, layers, regularizers
 from keras.engine import InputSpec, Layer
 from keras.initializers import random_normal
-from keras.layers import (Activation, Add, AveragePooling2D, Conv2D, MaxPooling2D, TimeDistributed,
-                          ZeroPadding2D)
+from keras.layers import (Activation, Add, AveragePooling2D, Conv2D, BatchNormalization,
+                          MaxPooling2D, TimeDistributed, ZeroPadding2D) 
 
 
 class BatchNormalization(Layer):
@@ -15,36 +15,36 @@ class BatchNormalization(Layer):
                  weights=None, beta_init='zero', gamma_init='one',
                  gamma_regularizer=None, beta_regularizer=None, **kwargs):
 
-        self.supports_masking = True
-        self.beta_init = initializers.get(beta_init)
-        self.gamma_init = initializers.get(gamma_init)
-        self.epsilon = epsilon
-        self.axis = axis
-        self.gamma_regularizer = regularizers.get(gamma_regularizer)
-        self.beta_regularizer = regularizers.get(beta_regularizer)
-        self.initial_weights = weights
+        self.supports_masking   = True
+        self.beta_init          = initializers.get(beta_init)
+        self.gamma_init         = initializers.get(gamma_init)
+        self.epsilon            = epsilon
+        self.axis               = axis
+        self.gamma_regularizer  = regularizers.get(gamma_regularizer)
+        self.beta_regularizer   = regularizers.get(beta_regularizer)
+        self.initial_weights    = weights
         super(BatchNormalization, self).__init__(**kwargs)
 
     def build(self, input_shape):
         self.input_spec = [InputSpec(shape=input_shape)]
         shape = (input_shape[self.axis],)
 
-        self.gamma = self.add_weight(shape,
-                                     initializer=self.gamma_init,
-                                     regularizer=self.gamma_regularizer,
-                                     name='{}_gamma'.format(self.name),
-                                     trainable=False)
-        self.beta = self.add_weight(shape,
+        self.gamma  = self.add_weight(shape=shape,
+                                    initializer=self.gamma_init,
+                                    regularizer=self.gamma_regularizer,
+                                    name='{}_gamma'.format(self.name),
+                                    trainable=False)
+        self.beta   = self.add_weight(shape=shape,
                                     initializer=self.beta_init,
                                     regularizer=self.beta_regularizer,
                                     name='{}_beta'.format(self.name),
                                     trainable=False)
-        self.running_mean = self.add_weight(shape, initializer='zero',
+        self.running_mean   = self.add_weight(shape=shape, initializer='zero',
                                             name='{}_running_mean'.format(self.name),
                                             trainable=False)
-        self.running_std = self.add_weight(shape, initializer='one',
-                                           name='{}_running_std'.format(self.name),
-                                           trainable=False)
+        self.running_std    = self.add_weight(shape=shape, initializer='one',
+                                            name='{}_running_std'.format(self.name),
+                                            trainable=False)
 
         if self.initial_weights is not None:
             self.set_weights(self.initial_weights)
@@ -53,7 +53,6 @@ class BatchNormalization(Layer):
         self.built = True
 
     def call(self, x, mask=None):
-
         assert self.built, 'Layer must be built before being called'
         input_shape = K.int_shape(x)
 
@@ -92,8 +91,8 @@ def identity_block(input_tensor, kernel_size, filters, stage, block):
 
     filters1, filters2, filters3 = filters
 
-    conv_name_base = 'res' + str(stage) + block + '_branch'
-    bn_name_base = 'bn' + str(stage) + block + '_branch'
+    conv_name_base  = 'res' + str(stage) + block + '_branch'
+    bn_name_base    = 'bn' + str(stage) + block + '_branch'
 
     x = Conv2D(filters1, (1, 1), kernel_initializer=random_normal(stddev=0.02), name=conv_name_base + '2a')(input_tensor)
     x = BatchNormalization(name=bn_name_base + '2a')(x)
@@ -115,25 +114,21 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
 
     filters1, filters2, filters3 = filters
 
-    conv_name_base = 'res' + str(stage) + block + '_branch'
-    bn_name_base = 'bn' + str(stage) + block + '_branch'
+    conv_name_base  = 'res' + str(stage) + block + '_branch'
+    bn_name_base    = 'bn' + str(stage) + block + '_branch'
 
-    x = Conv2D(filters1, (1, 1), strides=strides, kernel_initializer=random_normal(stddev=0.02),
-               name=conv_name_base + '2a')(input_tensor)
+    x = Conv2D(filters1, (1, 1), strides=strides, kernel_initializer=random_normal(stddev=0.02), name=conv_name_base + '2a')(input_tensor)
     x = BatchNormalization(name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
 
-    x = Conv2D(filters2, kernel_size, padding='same', kernel_initializer=random_normal(stddev=0.02),
-               name=conv_name_base + '2b')(x)
+    x = Conv2D(filters2, kernel_size, padding='same', kernel_initializer=random_normal(stddev=0.02), name=conv_name_base + '2b')(x)
     x = BatchNormalization(name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
 
-    x = Conv2D(filters3, (1, 1), kernel_initializer=random_normal(stddev=0.02), 
-               name=conv_name_base + '2c')(x)
+    x = Conv2D(filters3, (1, 1), kernel_initializer=random_normal(stddev=0.02), name=conv_name_base + '2c')(x)
     x = BatchNormalization(name=bn_name_base + '2c')(x)
 
-    shortcut = Conv2D(filters3, (1, 1), strides=strides, kernel_initializer=random_normal(stddev=0.02),
-                      name=conv_name_base + '1')(input_tensor)
+    shortcut = Conv2D(filters3, (1, 1), strides=strides, kernel_initializer=random_normal(stddev=0.02), name=conv_name_base + '1')(input_tensor)
     shortcut = BatchNormalization(name=bn_name_base + '1')(shortcut)
 
     x = layers.add([x, shortcut])
@@ -144,10 +139,8 @@ def ResNet50(inputs):
     #-----------------------------------#
     #   假设输入进来的图片是600,600,3
     #-----------------------------------#
-    img_input = inputs
-
     # 600,600,3 -> 300,300,64
-    x = ZeroPadding2D((3, 3))(img_input)
+    x = ZeroPadding2D((3, 3))(inputs)
     x = Conv2D(64, (7, 7), strides=(2, 2), name='conv1')(x)
     x = BatchNormalization(name='bn_conv1')(x)
     x = Activation('relu')(x)
@@ -179,8 +172,8 @@ def ResNet50(inputs):
 
 def identity_block_td(input_tensor, kernel_size, filters, stage, block):
     nb_filter1, nb_filter2, nb_filter3 = filters
-    conv_name_base = 'res' + str(stage) + block + '_branch'
-    bn_name_base = 'bn' + str(stage) + block + '_branch'
+    conv_name_base  = 'res' + str(stage) + block + '_branch'
+    bn_name_base    = 'bn' + str(stage) + block + '_branch'
 
     x = TimeDistributed(Conv2D(nb_filter1, (1, 1), kernel_initializer='normal'), name=conv_name_base + '2a')(input_tensor)
     x = TimeDistributed(BatchNormalization(), name=bn_name_base + '2a')(x)
@@ -200,8 +193,8 @@ def identity_block_td(input_tensor, kernel_size, filters, stage, block):
 
 def conv_block_td(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
     nb_filter1, nb_filter2, nb_filter3 = filters
-    conv_name_base = 'res' + str(stage) + block + '_branch'
-    bn_name_base = 'bn' + str(stage) + block + '_branch'
+    conv_name_base  = 'res' + str(stage) + block + '_branch'
+    bn_name_base    = 'bn' + str(stage) + block + '_branch'
 
     x = TimeDistributed(Conv2D(nb_filter1, (1, 1), strides=strides, kernel_initializer='normal'), name=conv_name_base + '2a')(input_tensor)
     x = TimeDistributed(BatchNormalization(), name=bn_name_base + '2a')(x)
@@ -221,14 +214,14 @@ def conv_block_td(input_tensor, kernel_size, filters, stage, block, strides=(2, 
     x = Activation('relu')(x)
     return x
 
-def classifier_layers(x):
-    # num_rois, 14, 14, 1024 -> num_rois, 7, 7, 2048
+def resnet50_classifier_layers(x):
+    # batch_size, num_rois, 14, 14, 1024 -> batch_size, num_rois, 7, 7, 2048
     x = conv_block_td(x, 3, [512, 512, 2048], stage=5, block='a', strides=(2, 2))
-    # num_rois, 7, 7, 2048 -> num_rois, 7, 7, 2048
+    # batch_size, num_rois, 7, 7, 2048 -> batch_size, num_rois, 7, 7, 2048
     x = identity_block_td(x, 3, [512, 512, 2048], stage=5, block='b')
-    # num_rois, 7, 7, 2048 -> num_rois, 7, 7, 2048
+    # batch_size, num_rois, 7, 7, 2048 -> batch_size, num_rois, 7, 7, 2048
     x = identity_block_td(x, 3, [512, 512, 2048], stage=5, block='c')
-    # num_rois, 7, 7, 2048 -> num_rois, 1, 1, 2048
+    # batch_size, num_rois, 7, 7, 2048 -> batch_size, num_rois, 1, 1, 2048
     x = TimeDistributed(AveragePooling2D((7, 7)), name='avg_pool')(x)
 
     return x

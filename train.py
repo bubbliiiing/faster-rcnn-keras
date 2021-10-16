@@ -1,243 +1,217 @@
 import keras
-import numpy as np
-import tensorflow as tf
-from keras import backend as K
+import keras.backend as K
 from keras.callbacks import TensorBoard
-from tqdm import tqdm
+from keras.optimizers import Adam
 
 from nets.frcnn import get_model
-from nets.frcnn_training import (Generator, LossHistory, class_loss_cls,
-                                 class_loss_regr, cls_loss,
-                                 get_img_output_length, smooth_l1)
+from nets.frcnn_training import (ProposalTargetCreator, classifier_cls_loss,
+                                 classifier_smooth_l1, rpn_cls_loss,
+                                 rpn_smooth_l1)
 from utils.anchors import get_anchors
-from utils.config import Config
-from utils.roi_helpers import calc_iou
-from utils.utils import BBoxUtility
+from utils.callbacks import LossHistory
+from utils.dataloader import FRCNNDatasets
+from utils.utils import get_classes
+from utils.utils_bbox import BBoxUtility
+from utils.utils_fit import fit_one_epoch
 
-
-def write_log(callback, names, logs, batch_no):
-    for name, value in zip(names, logs):
-        summary = tf.Summary()
-        summary_value = summary.value.add()
-        summary_value.simple_value = value
-        summary_value.tag = name
-        callback.writer.add_summary(summary, batch_no)
-        callback.writer.flush()
-
-def fit_one_epoch(model_rpn,model_all,epoch,epoch_size,epoch_size_val,gen,genval,Epoch,callback):
-    total_loss = 0
-    rpn_loc_loss = 0
-    rpn_cls_loss = 0
-    roi_loc_loss = 0
-    roi_cls_loss = 0
-
-    val_toal_loss = 0
-    with tqdm(total=epoch_size,desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
-        for iteration, batch in enumerate(gen):
-            if iteration >= epoch_size:
-                break
-            X, Y, boxes = batch[0], batch[1], batch[2]
-            P_rpn = model_rpn.predict_on_batch(X)
-            
-            height, width, _ = np.shape(X[0])
-            base_feature_width, base_feature_height = get_img_output_length(width, height)
-            anchors = get_anchors([base_feature_width, base_feature_height], width, height)
-            results = bbox_util.detection_out_rpn(P_rpn, anchors)
-
-            roi_inputs = []
-            out_classes = []
-            out_regrs = []
-            for i in range(len(X)):
-                R = results[i][:, 1:]
-                X2, Y1, Y2 = calc_iou(R, config, boxes[i], NUM_CLASSES)
-                roi_inputs.append(X2)
-                out_classes.append(Y1)
-                out_regrs.append(Y2)
-            
-            loss_class = model_all.train_on_batch([X, np.array(roi_inputs)], [Y[0], Y[1], np.array(out_classes), np.array(out_regrs)])
-            
-            write_log(callback, ['total_loss','rpn_cls_loss', 'rpn_reg_loss', 'detection_cls_loss', 'detection_reg_loss'], loss_class, iteration)
-
-            rpn_cls_loss += loss_class[1]
-            rpn_loc_loss += loss_class[2]
-            roi_cls_loss += loss_class[3]
-            roi_loc_loss += loss_class[4]
-            total_loss = rpn_loc_loss + rpn_cls_loss + roi_loc_loss + roi_cls_loss
-
-            pbar.set_postfix(**{'total'    : total_loss / (iteration + 1),  
-                                'rpn_cls'  : rpn_cls_loss / (iteration + 1),   
-                                'rpn_loc'  : rpn_loc_loss / (iteration + 1),  
-                                'roi_cls'  : roi_cls_loss / (iteration + 1),    
-                                'roi_loc'  : roi_loc_loss / (iteration + 1), 
-                                'lr'       : K.get_value(model_rpn.optimizer.lr)})
-            pbar.update(1)
-
-    print('Start Validation')
-    with tqdm(total=epoch_size_val, desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
-        for iteration, batch in enumerate(genval):
-            if iteration >= epoch_size_val:
-                break
-            X, Y, boxes = batch[0], batch[1], batch[2]
-            P_rpn = model_rpn.predict_on_batch(X)
-            
-            height, width, _ = np.shape(X[0])
-            base_feature_width, base_feature_height = get_img_output_length(width, height)
-            anchors = get_anchors([base_feature_width, base_feature_height], width, height)
-            results = bbox_util.detection_out_rpn(P_rpn, anchors)
-
-            roi_inputs = []
-            out_classes = []
-            out_regrs = []
-            for i in range(len(X)):
-                R = results[i][:, 1:]
-                X2, Y1, Y2 = calc_iou(R, config, boxes[i], NUM_CLASSES)
-                roi_inputs.append(X2)
-                out_classes.append(Y1)
-                out_regrs.append(Y2)
-
-            loss_class = model_all.test_on_batch([X, np.array(roi_inputs)], [Y[0], Y[1], np.array(out_classes), np.array(out_regrs)])
-
-            val_toal_loss += loss_class[0]
-            pbar.set_postfix(**{'total' : val_toal_loss / (iteration + 1)})
-            pbar.update(1)
-
-    loss_history.append_loss(total_loss/(epoch_size+1), val_toal_loss/(epoch_size_val+1))
-    print('Finish Validation')
-    print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
-    print('Total Loss: %.4f || Val Loss: %.4f ' % (total_loss/(epoch_size+1),val_toal_loss/(epoch_size_val+1)))
-
-    print('Saving state, iter:', str(epoch+1))
-    model_all.save_weights('logs/Epoch%d-Total_Loss%.4f-Val_Loss%.4f.h5'%((epoch+1),total_loss/(epoch_size+1),val_toal_loss/(epoch_size_val+1)))
-    return 
-
-#----------------------------------------------------#
-#   检测精度mAP和pr曲线计算参考视频
-#   https://www.bilibili.com/video/BV1zE411u7Vw
-#----------------------------------------------------#
 if __name__ == "__main__":
-    config = Config()
-    #----------------------------------------------------#
-    #   训练之前一定要修改NUM_CLASSES
-    #   修改成所需要区分的类的个数+1。
-    #----------------------------------------------------#
-    NUM_CLASSES = 21
-    #-----------------------------------------------------#
-    #   input_shape是输入图片的大小，默认为800,800,3
-    #   随着输入图片的增大，占用显存会增大
-    #   视频上为600,600,3，多次训练测试后发现800,800,3更优
-    #-----------------------------------------------------#
-    input_shape = [800, 800, 3]
-
-    model_rpn, model_all = get_model(config, NUM_CLASSES)
+    #--------------------------------------------------------#
+    #   训练前一定要修改classes_path，使其对应自己的数据集
+    #--------------------------------------------------------#
+    classes_path    = 'model_data/voc_classes.txt'
+    #----------------------------------------------------------------------------------------------------------------------------#
+    #   权值文件请看README，百度网盘下载。数据的预训练权重对不同数据集是通用的，因为特征是通用的。
+    #   预训练权重对于99%的情况都必须要用，不用的话权值太过随机，特征提取效果不明显，网络训练的结果也不会好。
+    #   训练自己的数据集时提示维度不匹配正常，预测的东西都不一样了自然维度不匹配
+    #
+    #   如果想要断点续练就将model_path设置成logs文件夹下已经训练的权值文件。 
+    #   当model_path = ''的时候不加载整个模型的权值。
+    #
+    #   此处使用的是整个模型的权重，因此是在train.py进行加载的。
+    #   如果想要让模型从主干的预训练权值开始训练，则设置model_path为主干网络的权值，此时仅加载主干。
+    #   如果想要让模型从0开始训练，则设置model_path = ''，Freeze_Train = Fasle，此时从0开始训练，且没有冻结主干的过程。
+    #   一般来讲，从0开始训练效果会很差，因为权值太过随机，特征提取效果不明显。
+    #----------------------------------------------------------------------------------------------------------------------------#
+    model_path      = 'model_data/voc_weights_resnet.h5'
     #------------------------------------------------------#
-    #   权值文件请看README，百度网盘下载
-    #   训练自己的数据集时提示维度不匹配正常
-    #   预测的东西都不一样了自然维度不匹配
+    #   输入的shape大小 
     #------------------------------------------------------#
-    base_net_weights = "model_data/voc_weights.h5"
-    model_rpn.load_weights(base_net_weights, by_name=True)
-    model_all.load_weights(base_net_weights, by_name=True)
+    input_shape     = [600, 600]
+    #---------------------------------------------#
+    #   vgg或者resnet50
+    #---------------------------------------------#
+    backbone        = "resnet50"
+    #------------------------------------------------------------------------#
+    #   anchors_size用于设定先验框的大小，每个特征点均存在9个先验框。
+    #   anchors_size每个数对应3个先验框。
+    #   当anchors_size = [8, 16, 32]的时候，生成的先验框宽高约为：
+    #   [128, 128] ; [256, 256]; [512, 512]; [128, 256]; 
+    #   [256, 512]; [512, 1024]; [256, 128] ; [512, 256]; 
+    #   [1024, 512]; 详情查看anchors.py
+    #   如果想要检测小物体，可以减小anchors_size靠前的数。
+    #   比如设置anchors_size = [64, 256, 512]
+    #------------------------------------------------------------------------#
+    anchors_size    = [128, 256, 512]
 
-    bbox_util = BBoxUtility(overlap_threshold=config.rpn_max_overlap,ignore_threshold=config.rpn_min_overlap,top_k=config.num_RPN_train_pre)
+    #----------------------------------------------------#
+    #   训练分为两个阶段，分别是冻结阶段和解冻阶段。
+    #   显存不足与数据集大小无关，提示显存不足请调小batch_size。
+    #----------------------------------------------------#
+    #----------------------------------------------------#
+    #   冻结阶段训练参数
+    #   此时模型的主干被冻结了，特征提取网络不发生改变
+    #   占用的显存较小，仅对网络进行微调
+    #----------------------------------------------------#
+    Init_Epoch          = 0
+    Freeze_Epoch        = 50
+    Freeze_batch_size   = 4
+    Freeze_lr           = 1e-4
+    #----------------------------------------------------#
+    #   解冻阶段训练参数
+    #   此时模型的主干不被冻结了，特征提取网络会发生改变
+    #   占用的显存较大，网络所有的参数都会发生改变
+    #----------------------------------------------------#
+    UnFreeze_Epoch      = 100
+    Unfreeze_batch_size = 2
+    Unfreeze_lr         = 1e-5
+    #------------------------------------------------------#
+    #   是否进行冻结训练，默认先冻结主干训练后解冻训练。
+    #------------------------------------------------------#
+    Freeze_Train        = True
+    #----------------------------------------------------#
+    #   获得图片路径和标签
+    #----------------------------------------------------#
+    train_annotation_path   = '2007_train.txt'
+    val_annotation_path     = '2007_val.txt'
+
+    #----------------------------------------------------#
+    #   获取classes和anchor
+    #----------------------------------------------------#
+    class_names, num_classes = get_classes(classes_path)
+    num_classes += 1
+    anchors = get_anchors(input_shape, backbone, anchors_size)
+
+    K.clear_session()
+    model_rpn, model_all = get_model(num_classes, backbone = backbone)
+    if model_path != '':
+        #------------------------------------------------------#
+        #   载入预训练权重
+        #------------------------------------------------------#
+        print('Load weights {}.'.format(model_path))
+        model_rpn.load_weights(model_path, by_name=True)
+        model_all.load_weights(model_path, by_name=True)
 
     #--------------------------------------------#
     #   训练参数的设置
     #--------------------------------------------#
-    logging = TensorBoard(log_dir="logs")
-    callback = logging
+    callback        = TensorBoard(log_dir="logs")
     callback.set_model(model_all)
-    loss_history = LossHistory("logs/")
+    loss_history    = LossHistory("logs/")
 
-    annotation_path = '2007_train.txt'
-    #----------------------------------------------------------------------#
-    #   验证集的划分在train.py代码里面进行
-    #   2007_test.txt和2007_val.txt里面没有内容是正常的。训练不会使用到。
-    #   当前划分方式下，验证集和训练集的比例为1:9
-    #----------------------------------------------------------------------#
-    val_split = 0.1
-    with open(annotation_path) as f:
-        lines = f.readlines()
-    np.random.seed(10101)
-    np.random.shuffle(lines)
-    np.random.seed(None)
-    num_val = int(len(lines)*val_split)
-    num_train = len(lines) - num_val
-    
+    bbox_util       = BBoxUtility(num_classes)
+    roi_helper      = ProposalTargetCreator(num_classes)
+    #---------------------------#
+    #   读取数据集对应的txt
+    #---------------------------#
+    with open(train_annotation_path) as f:
+        train_lines = f.readlines()
+    with open(val_annotation_path) as f:
+        val_lines   = f.readlines()
+    num_train   = len(train_lines)
+    num_val     = len(val_lines)
+
+    freeze_layers = {'vgg' : 17, 'resnet50' : 141}[backbone]
+    if Freeze_Train:
+        for i in range(freeze_layers): 
+            if type(model_all.layers[i]) != keras.layers.BatchNormalization:
+                model_all.layers[i].trainable = False
+        print('Freeze the first {} layers of total {} layers.'.format(freeze_layers, len(model_all.layers)))
+
     #------------------------------------------------------#
-    #   主干特征提取网络特征通用，使用预训练权重可以加快训练
+    #   主干特征提取网络特征通用，冻结训练可以加快训练速度
+    #   也可以在训练初期防止权值被破坏。
     #   Init_Epoch为起始世代
-    #   Interval_Epoch为中间训练的世代
-    #   Epoch总训练世代
+    #   Freeze_Epoch为冻结训练的世代
+    #   Unfreeze_Epoch总训练世代
     #   提示OOM或者显存不足请调小Batch_size
     #------------------------------------------------------#
     if True:
-        lr              = 1e-4
-        Batch_size      = 2
-        Init_Epoch      = 0
-        Interval_Epoch  = 50
-        
+        batch_size  = Freeze_batch_size
+        lr          = Freeze_lr
+        start_epoch = Init_Epoch
+        end_epoch   = Freeze_Epoch
+
         model_rpn.compile(
             loss = {
-                'classification': cls_loss(),
-                'regression'    : smooth_l1()
-            }, optimizer=keras.optimizers.Adam(lr=lr)
+                'classification': rpn_cls_loss(),
+                'regression'    : rpn_smooth_l1()
+            }, optimizer = Adam(lr=lr)
         )
         model_all.compile(
             loss = {
-                'classification'                        : cls_loss(),
-                'regression'                            : smooth_l1(),
-                'dense_class_{}'.format(NUM_CLASSES)    : class_loss_cls,
-                'dense_regress_{}'.format(NUM_CLASSES)  : class_loss_regr(NUM_CLASSES-1)
-            }, optimizer=keras.optimizers.Adam(lr=lr)
+                'classification'                        : rpn_cls_loss(),
+                'regression'                            : rpn_smooth_l1(),
+                'dense_class_{}'.format(num_classes)    : classifier_cls_loss(),
+                'dense_regress_{}'.format(num_classes)  : classifier_smooth_l1(num_classes - 1)
+            }, optimizer = Adam(lr=lr)
         )
 
-        gen             = Generator(bbox_util, lines[:num_train], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
-        gen_val         = Generator(bbox_util, lines[num_train:], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
+        gen     = FRCNNDatasets(train_lines, input_shape, anchors, batch_size, num_classes, train = True).generate()
+        gen_val = FRCNNDatasets(val_lines, input_shape, anchors, batch_size, num_classes, train = False).generate()
 
-        epoch_size      = num_train // Batch_size
-        epoch_size_val  = num_val // Batch_size
+        epoch_step      = num_train // batch_size
+        epoch_step_val  = num_val // batch_size
 
-        if epoch_size == 0 or epoch_size_val == 0:
-            raise ValueError("数据集过小，无法进行训练，请扩充数据集。")
-        
-        for epoch in range(Init_Epoch, Interval_Epoch):
-            fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Interval_Epoch, callback)
-            lr = lr*0.95
+        if epoch_step == 0 or epoch_step_val == 0:
+            raise ValueError('数据集过小，无法进行训练，请扩充数据集。')
+
+        print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+        for epoch in range(start_epoch, end_epoch):
+            fit_one_epoch(model_rpn, model_all, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, end_epoch,
+                    anchors, bbox_util, roi_helper)
+            lr = lr*0.96
             K.set_value(model_rpn.optimizer.lr, lr)
             K.set_value(model_all.optimizer.lr, lr)
 
+    if Freeze_Train:
+        for i in range(freeze_layers): 
+            if type(model_all.layers[i]) != keras.layers.BatchNormalization:
+                model_all.layers[i].trainable = True
+
     if True:
-        lr              = 1e-5
-        Batch_size      = 2
-        Interval_Epoch  = 50
-        Epoch           = 100
-        
+        batch_size  = Unfreeze_batch_size
+        lr          = Unfreeze_lr
+        start_epoch = Freeze_Epoch
+        end_epoch   = UnFreeze_Epoch
+
         model_rpn.compile(
             loss = {
-                'classification': cls_loss(),
-                'regression'    : smooth_l1()
-            }, optimizer=keras.optimizers.Adam(lr=lr)
+                'classification': rpn_cls_loss(),
+                'regression'    : rpn_smooth_l1()
+            }, optimizer = Adam(lr=lr)
         )
         model_all.compile(
             loss = {
-                'classification'                        : cls_loss(),
-                'regression'                            : smooth_l1(),
-                'dense_class_{}'.format(NUM_CLASSES)    : class_loss_cls,
-                'dense_regress_{}'.format(NUM_CLASSES)  : class_loss_regr(NUM_CLASSES-1)
-            }, optimizer=keras.optimizers.Adam(lr=lr)
+                'classification'                        : rpn_cls_loss(),
+                'regression'                            : rpn_smooth_l1(),
+                'dense_class_{}'.format(num_classes)    : classifier_cls_loss(),
+                'dense_regress_{}'.format(num_classes)  : classifier_smooth_l1(num_classes - 1)
+            }, optimizer = Adam(lr=lr)
         )
 
-        gen             = Generator(bbox_util, lines[:num_train], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
-        gen_val         = Generator(bbox_util, lines[num_train:], NUM_CLASSES, Batch_size, input_shape=[input_shape[0], input_shape[1]]).generate()
+        gen     = FRCNNDatasets(train_lines, input_shape, anchors, batch_size, num_classes, train = True).generate()
+        gen_val = FRCNNDatasets(val_lines, input_shape, anchors, batch_size, num_classes, train = False).generate()
 
-        epoch_size      = num_train // Batch_size
-        epoch_size_val  = num_val // Batch_size
+        epoch_step      = num_train // batch_size
+        epoch_step_val  = num_val // batch_size
 
-        if epoch_size == 0 or epoch_size_val == 0:
-            raise ValueError("数据集过小，无法进行训练，请扩充数据集。")
-        
-        for epoch in range(Interval_Epoch, Epoch):
-            fit_one_epoch(model_rpn, model_all, epoch, epoch_size, epoch_size_val, gen, gen_val, Epoch, callback)
-            lr = lr*0.95
+        if epoch_step == 0 or epoch_step_val == 0:
+            raise ValueError('数据集过小，无法进行训练，请扩充数据集。')
+
+        print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+        for epoch in range(start_epoch, end_epoch):
+            fit_one_epoch(model_rpn, model_all, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, end_epoch,
+                    anchors, bbox_util, roi_helper)
+            lr = lr*0.96
             K.set_value(model_rpn.optimizer.lr, lr)
             K.set_value(model_all.optimizer.lr, lr)

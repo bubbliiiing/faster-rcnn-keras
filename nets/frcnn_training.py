@@ -1,36 +1,21 @@
-
-import os
-import random
-from random import shuffle
-
-import cv2
 import keras
 import numpy as np
-import scipy.signal
 import tensorflow as tf
 from keras import backend as K
-from keras.applications.imagenet_utils import preprocess_input
-from keras.objectives import categorical_crossentropy
-from matplotlib import pyplot as plt
-from PIL import Image
-from utils.anchors import get_anchors
 
 
-def rand(a=0, b=1):
-    return np.random.rand()*(b-a) + a
-
-def cls_loss(ratio=3):
-    def _cls_loss(y_true, y_pred):
+def rpn_cls_loss():
+    def _rpn_cls_loss(y_true, y_pred):
         #---------------------------------------------------#
         #   y_true [batch_size, num_anchor, 1]
         #   y_pred [batch_size, num_anchor, 1]
         #---------------------------------------------------#
         labels         = y_true
+        classification = y_pred
         #---------------------------------------------------#
         #   -1 是需要忽略的, 0 是背景, 1 是存在目标
         #---------------------------------------------------#
         anchor_state   = y_true 
-        classification = y_pred
 
         #---------------------------------------------------#
         #   获得无需忽略的所有样本
@@ -49,28 +34,37 @@ def cls_loss(ratio=3):
         normalizer_no_ignore = keras.backend.cast(keras.backend.shape(normalizer_no_ignore)[0], keras.backend.floatx())
         normalizer_no_ignore = keras.backend.maximum(keras.backend.cast_to_floatx(1.0), normalizer_no_ignore)
 
-        # 总的loss
+        #---------------------------------------------------#
+        #   总的loss
+        #---------------------------------------------------#
         loss = cls_loss_for_no_ignore / normalizer_no_ignore
         return loss
-    return _cls_loss
+    return _rpn_cls_loss
 
-def smooth_l1(sigma=1.0):
+def rpn_smooth_l1(sigma = 1.0):
     sigma_squared = sigma ** 2
-    def _smooth_l1(y_true, y_pred):
+    def _rpn_smooth_l1(y_true, y_pred):
         #---------------------------------------------------#
-        #   y_true [batch_size, num_anchor, 4+1]
+        #   y_true [batch_size, num_anchor, 4 + 1]
         #   y_pred [batch_size, num_anchor, 4]
         #---------------------------------------------------#
         regression        = y_pred
         regression_target = y_true[:, :, :-1]
+        #---------------------------------------------------#
+        #   -1 是需要忽略的, 0 是背景, 1 是存在目标
+        #---------------------------------------------------#
         anchor_state      = y_true[:, :, -1]
 
-        # 找到正样本
+        #---------------------------------------------------#
+        #   找到正样本
+        #---------------------------------------------------#
         indices           = tf.where(keras.backend.equal(anchor_state, 1))
         regression        = tf.gather_nd(regression, indices)
         regression_target = tf.gather_nd(regression_target, indices)
 
-        # 计算smooth L1损失
+        #---------------------------------------------------#
+        #   计算smooth L1损失
+        #---------------------------------------------------#
         regression_diff = regression - regression_target
         regression_diff = keras.backend.abs(regression_diff)
         regression_loss = tf.where(
@@ -79,270 +73,172 @@ def smooth_l1(sigma=1.0):
             regression_diff - 0.5 / sigma_squared
         )
 
-        # 将所获得的loss除上正样本的数量
+        #---------------------------------------------------#
+        #   将所获得的loss除上正样本的数量
+        #---------------------------------------------------#
         normalizer = keras.backend.maximum(1, keras.backend.shape(indices)[0])
         normalizer = keras.backend.cast(normalizer, dtype=keras.backend.floatx())
         regression_loss = keras.backend.sum(regression_loss) / normalizer
         return regression_loss 
-    return _smooth_l1
+    return _rpn_smooth_l1
 
+def classifier_cls_loss():
+    def _classifier_cls_loss(y_true, y_pred):
+        return K.mean(K.categorical_crossentropy(y_true, y_pred))
+    return _classifier_cls_loss
 
-def class_loss_regr(num_classes):
+def classifier_smooth_l1(num_classes, sigma = 1.0):
     epsilon = 1e-4
+    sigma_squared = sigma ** 2
     def class_loss_regr_fixed_num(y_true, y_pred):
-        x = y_true[:, :, 4*num_classes:] - y_pred
-        x_abs = K.abs(x)
-        x_bool = K.cast(K.less_equal(x_abs, 1.0), 'float32')
-        loss = 4 * K.sum(y_true[:, :, :4*num_classes] * (x_bool * (0.5 * x * x) + (1 - x_bool) * (x_abs - 0.5))) / K.sum(epsilon + y_true[:, :, :4*num_classes])
-        return loss
+        regression        = y_pred
+        regression_target = y_true[:, :, 4 * num_classes:]
+
+        regression_diff = regression_target - regression
+        regression_diff = keras.backend.abs(regression_diff)
+
+        regression_loss = 4 * K.sum(y_true[:, :, :4*num_classes] * tf.where(
+                keras.backend.less(regression_diff, 1.0 / sigma_squared),
+                0.5 * sigma_squared * keras.backend.pow(regression_diff, 2),
+                regression_diff - 0.5 / sigma_squared
+            )
+        )
+        normalizer = K.sum(epsilon + y_true[:, :, :4*num_classes])
+        regression_loss = keras.backend.sum(regression_loss) / normalizer
+
+        # x_bool = K.cast(K.less_equal(regression_diff, 1.0), 'float32')
+        # regression_loss = 4 * K.sum(y_true[:, :, :4*num_classes] * (x_bool * (0.5 * regression_diff * regression_diff) + (1 - x_bool) * (regression_diff - 0.5))) / K.sum(epsilon + y_true[:, :, :4*num_classes])
+        return regression_loss
     return class_loss_regr_fixed_num
 
-def class_loss_cls(y_true, y_pred):
-    loss = K.mean(categorical_crossentropy(y_true, y_pred))
-    return loss
+class ProposalTargetCreator(object):
+    def __init__(self, num_classes, n_sample=128, pos_ratio=0.5, pos_iou_thresh=0.5, 
+        neg_iou_thresh_high=0.5, neg_iou_thresh_low=0, variance=[0.125, 0.125, 0.25, 0.25]):
 
-def get_new_img_size(width, height, img_min_side=600):
-    if width <= height:
-        f = float(img_min_side) / width
-        resized_height = int(f * height)
-        resized_width = int(img_min_side)
-    else:
-        f = float(img_min_side) / height
-        resized_width = int(f * width)
-        resized_height = int(img_min_side)
+        self.n_sample               = n_sample
+        self.pos_ratio              = pos_ratio
+        self.pos_roi_per_image      = np.round(self.n_sample * self.pos_ratio)
+        self.pos_iou_thresh         = pos_iou_thresh
+        self.neg_iou_thresh_high    = neg_iou_thresh_high
+        self.neg_iou_thresh_low     = neg_iou_thresh_low
+        self.num_classes            = num_classes
+        self.variance               = variance
 
-    return resized_width, resized_height
+    def bbox_iou(self, bbox_a, bbox_b):
+        if bbox_a.shape[1] != 4 or bbox_b.shape[1] != 4:
+            print(bbox_a, bbox_b)
+            raise IndexError
+        tl = np.maximum(bbox_a[:, None, :2], bbox_b[:, :2])
+        br = np.minimum(bbox_a[:, None, 2:], bbox_b[:, 2:])
+        area_i = np.prod(br - tl, axis=2) * (tl < br).all(axis=2)
+        area_a = np.prod(bbox_a[:, 2:] - bbox_a[:, :2], axis=1)
+        area_b = np.prod(bbox_b[:, 2:] - bbox_b[:, :2], axis=1)
+        return area_i / (area_a[:, None] + area_b - area_i)
 
-def get_img_output_length(width, height):
-    def get_output_length(input_length):
-        # input_length += 6
-        filter_sizes = [7, 3, 1, 1]
-        padding = [3,1,0,0]
-        stride = 2
-        for i in range(4):
-            # input_length = (input_length - filter_size + stride) // stride
-            input_length = (input_length+2*padding[i]-filter_sizes[i]) // stride + 1
-        return input_length
-    return get_output_length(width), get_output_length(height) 
-    
-class Generator(object):
-    def __init__(self, bbox_util, train_lines, num_classes, Batch_size, input_shape = [600,600], num_regions=256):
-        self.bbox_util = bbox_util
-        self.train_lines = train_lines
-        self.train_batches = len(train_lines)
-        self.num_classes = num_classes
-        self.Batch_size = Batch_size
-        self.input_shape = input_shape
-        self.num_regions = num_regions
-        
-    def get_random_data(self, annotation_line, jitter=.3, hue=.1, sat=1.5, val=1.5, random=True):
-        '''r实时数据增强的随机预处理'''
-        line = annotation_line.split()
-        image = Image.open(line[0])
-        iw, ih = image.size
-        w, h = self.input_shape
+    def bbox2loc(self, src_bbox, dst_bbox):
+        width = src_bbox[:, 2] - src_bbox[:, 0]
+        height = src_bbox[:, 3] - src_bbox[:, 1]
+        ctr_x = src_bbox[:, 0] + 0.5 * width
+        ctr_y = src_bbox[:, 1] + 0.5 * height
 
-        box = np.array([np.array(list(map(int,box.split(',')))) for box in line[1:]])
+        base_width = dst_bbox[:, 2] - dst_bbox[:, 0]
+        base_height = dst_bbox[:, 3] - dst_bbox[:, 1]
+        base_ctr_x = dst_bbox[:, 0] + 0.5 * base_width
+        base_ctr_y = dst_bbox[:, 1] + 0.5 * base_height
 
-        if not random:
-            # resize image
-            scale = min(w/iw, h/ih)
-            nw = int(iw*scale)
-            nh = int(ih*scale)
-            dx = (w-nw)//2
-            dy = (h-nh)//2
+        eps = np.finfo(height.dtype).eps
+        width = np.maximum(width, eps)
+        height = np.maximum(height, eps)
 
-            image = image.resize((nw,nh), Image.BICUBIC)
-            new_image = Image.new('RGB', (w,h), (128,128,128))
-            new_image.paste(image, (dx, dy))
-            image_data = np.array(new_image, np.float32)
+        dx = (base_ctr_x - ctr_x) / width
+        dy = (base_ctr_y - ctr_y) / height
+        dw = np.log(base_width / width)
+        dh = np.log(base_height / height)
 
-            # correct boxes
-            box_data = np.zeros((len(box),5))
-            if len(box)>0:
-                np.random.shuffle(box)
-                box[:, [0,2]] = box[:, [0,2]]*nw/iw + dx
-                box[:, [1,3]] = box[:, [1,3]]*nh/ih + dy
-                box[:, 0:2][box[:, 0:2]<0] = 0
-                box[:, 2][box[:, 2]>w] = w
-                box[:, 3][box[:, 3]>h] = h
-                box_w = box[:, 2] - box[:, 0]
-                box_h = box[:, 3] - box[:, 1]
-                box = box[np.logical_and(box_w>1, box_h>1)]
-                box_data = np.zeros((len(box),5))
-                box_data[:len(box)] = box
+        loc = np.vstack((dx, dy, dw, dh)).transpose()
+        return loc
 
-            return image_data, box_data
-            
-        # resize image
-        new_ar = w/h * rand(1-jitter,1+jitter)/rand(1-jitter,1+jitter)
-        scale = rand(.25, 2)
-        if new_ar < 1:
-            nh = int(scale*h)
-            nw = int(nh*new_ar)
+    def calc_iou(self, R, all_boxes):
+        bboxes  = all_boxes[:, :4]
+        label   = all_boxes[:, 4]
+        R       = np.concatenate([R, bboxes], axis=0)
+
+        # ----------------------------------------------------- #
+        #   计算建议框和真实框的重合程度
+        # ----------------------------------------------------- #
+        if len(bboxes)==0:
+            max_iou         = np.zeros(len(R))
+            gt_assignment   = np.zeros(len(R), np.int32)
+            gt_roi_label    = np.zeros(len(R))
         else:
-            nw = int(scale*w)
-            nh = int(nw/new_ar)
-        image = image.resize((nw,nh), Image.BICUBIC)
+            iou             = self.bbox_iou(R, bboxes)
+            #---------------------------------------------------------#
+            #   获得每一个建议框最对应的真实框的iou  [num_roi, ]
+            #---------------------------------------------------------#
+            max_iou         = iou.max(axis=1)
+            #---------------------------------------------------------#
+            #   获得每一个建议框最对应的真实框  [num_roi, ]
+            #---------------------------------------------------------#
+            gt_assignment   = iou.argmax(axis=1)
+            #---------------------------------------------------------#
+            #   真实框的标签
+            #---------------------------------------------------------#
+            gt_roi_label    = label[gt_assignment] 
 
-        # place image
-        dx = int(rand(0, w-nw))
-        dy = int(rand(0, h-nh))
-        new_image = Image.new('RGB', (w,h), (128,128,128))
-        new_image.paste(image, (dx, dy))
-        image = new_image
+        #----------------------------------------------------------------#
+        #   满足建议框和真实框重合程度大于neg_iou_thresh_high的作为负样本
+        #   将正样本的数量限制在self.pos_roi_per_image以内
+        #----------------------------------------------------------------#
+        pos_index = np.where(max_iou >= self.pos_iou_thresh)[0]
+        pos_roi_per_this_image = int(min(self.n_sample//2, pos_index.size))
+        if pos_index.size > 0:
+            pos_index = np.random.choice(pos_index, size=pos_roi_per_this_image, replace=False)
 
-        # flip image or not
-        flip = rand()<.5
-        if flip: image = image.transpose(Image.FLIP_LEFT_RIGHT)
-
-        # distort image
-        hue = rand(-hue, hue)
-        sat = rand(1, sat) if rand()<.5 else 1/rand(1, sat)
-        val = rand(1, val) if rand()<.5 else 1/rand(1, val)
-        x = cv2.cvtColor(np.array(image,np.float32)/255, cv2.COLOR_RGB2HSV)
-        x[..., 0] += hue*360
-        x[..., 0][x[..., 0]>1] -= 1
-        x[..., 0][x[..., 0]<0] += 1
-        x[..., 1] *= sat
-        x[..., 2] *= val
-        x[x[:,:, 0]>360, 0] = 360
-        x[:, :, 1:][x[:, :, 1:]>1] = 1
-        x[x<0] = 0
-        image_data = cv2.cvtColor(x, cv2.COLOR_HSV2RGB)*255
-
-        box_data = np.zeros((len(box),5))
-        if len(box)>0:
-            np.random.shuffle(box)
-            box[:, [0,2]] = box[:, [0,2]]*nw/iw + dx
-            box[:, [1,3]] = box[:, [1,3]]*nh/ih + dy
-            if flip: box[:, [0,2]] = w - box[:, [2,0]]
-            box[:, 0:2][box[:, 0:2]<0] = 0
-            box[:, 2][box[:, 2]>w] = w
-            box[:, 3][box[:, 3]>h] = h
-            box_w = box[:, 2] - box[:, 0]
-            box_h = box[:, 3] - box[:, 1]
-            box = box[np.logical_and(box_w>1, box_h>1)] # discard invalid box
-            box_data = np.zeros((len(box),5))
-            box_data[:len(box)] = box
-        return image_data, box_data
-
-    def generate(self):
-        while True:
-            shuffle(self.train_lines)
-            lines = self.train_lines
-
-            inputs = []
-            target0 = []
-            target1 = []
-            target2 = []
-            for annotation_line in lines:  
-                img, y = self.get_random_data(annotation_line)
-                height, width, _ = np.shape(img)
-
-                if len(y)>0:
-                    boxes = np.array(y[:,:4],dtype=np.float32)
-                    boxes[:,0] = boxes[:,0] / width
-                    boxes[:,1] = boxes[:,1] / height
-                    boxes[:,2] = boxes[:,2] / width
-                    boxes[:,3] = boxes[:,3] / height
-                    y[:,:4] = boxes[:,:4]
-
-                anchors = get_anchors(get_img_output_length(width, height), width, height)
-                #---------------------------------------------------#
-                #   assignment分为2个部分，它的shape为 :, 5
-                #   :, :4      的内容为网络应该有的回归预测结果
-                #   :,  4      的内容为先验框是否包含物体，默认为背景
-                #---------------------------------------------------#
-                assignment = self.bbox_util.assign_boxes(y,anchors)
-
-                classification = assignment[:, 4]
-                regression = assignment[:, :]
-                
-                #---------------------------------------------------#
-                #   对正样本与负样本进行筛选，训练样本总和为256
-                #---------------------------------------------------#
-                mask_pos = classification[:]>0
-                num_pos = len(classification[mask_pos])
-                if num_pos > self.num_regions/2:
-                    val_locs = random.sample(range(num_pos), int(num_pos - self.num_regions/2))
-                    temp_classification = classification[mask_pos]
-                    temp_regression = regression[mask_pos]
-                    temp_classification[val_locs] = -1
-                    temp_regression[val_locs,-1] = -1
-                    classification[mask_pos] = temp_classification
-                    regression[mask_pos] = temp_regression
-                    
-                mask_neg = classification[:]==0
-                num_neg = len(classification[mask_neg])
-                mask_pos = classification[:]>0
-                num_pos = len(classification[mask_pos])
-                if len(classification[mask_neg]) + num_pos > self.num_regions:
-                    val_locs = random.sample(range(num_neg), int(num_neg + num_pos - self.num_regions))
-                    temp_classification = classification[mask_neg]
-                    temp_classification[val_locs] = -1
-                    classification[mask_neg] = temp_classification
-                    
-                inputs.append(np.array(img))         
-                target0.append(np.reshape(classification,[-1,1]))
-                target1.append(np.reshape(regression,[-1,5]))
-                target2.append(y)
-
-                if len(inputs) == self.Batch_size:
-                    tmp_inp = np.array(inputs)
-                    tmp_targets = [np.array(target0, np.float32), np.array(target1, np.float32)]
-                    tmp_y = target2
-                    yield preprocess_input(tmp_inp), tmp_targets, tmp_y
-                    inputs = []
-                    target0 = []
-                    target1 = []
-                    target2 = []
-                    
-
-class LossHistory():
-    def __init__(self, log_dir):
-        import datetime
-        curr_time = datetime.datetime.now()
-        time_str = datetime.datetime.strftime(curr_time,'%Y_%m_%d_%H_%M_%S')
-        self.log_dir    = log_dir
-        self.time_str   = time_str
-        self.save_path  = os.path.join(self.log_dir, "loss_" + str(self.time_str))
-        self.losses     = []
-        self.val_loss   = []
+        #-----------------------------------------------------------------------------------------------------#
+        #   满足建议框和真实框重合程度小于neg_iou_thresh_high大于neg_iou_thresh_low作为负样本
+        #   将正样本的数量和负样本的数量的总和固定成self.n_sample
+        #-----------------------------------------------------------------------------------------------------#
+        neg_index = np.where((max_iou < self.neg_iou_thresh_high) & (max_iou >= self.neg_iou_thresh_low))[0]
+        neg_roi_per_this_image = self.n_sample - pos_roi_per_this_image
+        if neg_roi_per_this_image > neg_index.size:
+            neg_index = np.random.choice(neg_index, size=neg_roi_per_this_image, replace=True)
+        else:
+            neg_index = np.random.choice(neg_index, size=neg_roi_per_this_image, replace=False)
         
-        os.makedirs(self.save_path)
+        #---------------------------------------------------------#
+        #   sample_roi      [n_sample, ]
+        #   gt_roi_loc      [n_sample, 4]
+        #   gt_roi_label    [n_sample, ]
+        #---------------------------------------------------------#
+        keep_index = np.append(pos_index, neg_index)
+        sample_roi = R[keep_index]
 
-    def append_loss(self, loss, val_loss):
-        self.losses.append(loss)
-        self.val_loss.append(val_loss)
-        with open(os.path.join(self.save_path, "epoch_loss_" + str(self.time_str) + ".txt"), 'a') as f:
-            f.write(str(loss))
-            f.write("\n")
-        with open(os.path.join(self.save_path, "epoch_val_loss_" + str(self.time_str) + ".txt"), 'a') as f:
-            f.write(str(val_loss))
-            f.write("\n")
-        self.loss_plot()
+        if len(bboxes) != 0:
+            gt_roi_loc = self.bbox2loc(sample_roi, bboxes[gt_assignment[keep_index]])
+            gt_roi_loc = gt_roi_loc / np.array(self.variance)
+        else:
+            gt_roi_loc = np.zeros_like(sample_roi)
 
-    def loss_plot(self):
-        iters = range(len(self.losses))
+        gt_roi_label                            = gt_roi_label[keep_index]
+        gt_roi_label[pos_roi_per_this_image:]   = self.num_classes - 1
+        
+        #---------------------------------------------------------#
+        #   X       [n_sample, 4]
+        #   Y1      [n_sample, num_classes]
+        #   Y2      [n_sample, (num_clssees-1) * 8]
+        #---------------------------------------------------------#
+        X                   = np.zeros_like(sample_roi)
+        X[:, [0, 1, 2, 3]]  = sample_roi[:, [1, 0, 3, 2]]
 
-        plt.figure()
-        plt.plot(iters, self.losses, 'red', linewidth = 2, label='train loss')
-        plt.plot(iters, self.val_loss, 'coral', linewidth = 2, label='val loss')
-        try:
-            if len(self.losses) < 25:
-                num = 5
-            else:
-                num = 15
-            
-            plt.plot(iters, scipy.signal.savgol_filter(self.losses, num, 3), 'green', linestyle = '--', linewidth = 2, label='smooth train loss')
-            plt.plot(iters, scipy.signal.savgol_filter(self.val_loss, num, 3), '#8B4513', linestyle = '--', linewidth = 2, label='smooth val loss')
-        except:
-            pass
+        Y1                  = np.eye(self.num_classes)[np.array(gt_roi_label, np.int32)]
 
-        plt.grid(True)
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.legend(loc="upper right")
+        y_class_regr_label  = np.zeros([np.shape(gt_roi_loc)[0], self.num_classes-1, 4])
+        y_class_regr_coords = np.zeros([np.shape(gt_roi_loc)[0], self.num_classes-1, 4])
+        y_class_regr_label[np.arange(np.shape(gt_roi_loc)[0])[:pos_roi_per_this_image], np.array(gt_roi_label[:pos_roi_per_this_image], np.int32)] = 1
+        y_class_regr_coords[np.arange(np.shape(gt_roi_loc)[0])[:pos_roi_per_this_image], np.array(gt_roi_label[:pos_roi_per_this_image], np.int32)] = \
+            gt_roi_loc[:pos_roi_per_this_image]
+        y_class_regr_label  = np.reshape(y_class_regr_label, [np.shape(gt_roi_loc)[0], -1])
+        y_class_regr_coords = np.reshape(y_class_regr_coords, [np.shape(gt_roi_loc)[0], -1])
 
-        plt.savefig(os.path.join(self.save_path, "epoch_loss_" + str(self.time_str) + ".png"))
+        Y2 = np.concatenate([np.array(y_class_regr_label), np.array(y_class_regr_coords)], axis = 1)
+        return X, Y1, Y2
