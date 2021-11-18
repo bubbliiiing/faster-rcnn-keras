@@ -159,18 +159,18 @@ class ProposalTargetCreator(object):
         return loc
 
     def calc_iou(self, R, all_boxes):
-        bboxes  = all_boxes[:, :4]
-        label   = all_boxes[:, 4]
-        R       = np.concatenate([R, bboxes], axis=0)
-
         # ----------------------------------------------------- #
         #   计算建议框和真实框的重合程度
         # ----------------------------------------------------- #
-        if len(bboxes)==0:
+        if len(all_boxes)==0:
             max_iou         = np.zeros(len(R))
             gt_assignment   = np.zeros(len(R), np.int32)
             gt_roi_label    = np.zeros(len(R))
         else:
+            bboxes          = all_boxes[:, :4]
+            label           = all_boxes[:, 4]
+            R               = np.concatenate([R, bboxes], axis=0)
+
             iou             = self.bbox_iou(R, bboxes)
             #---------------------------------------------------------#
             #   获得每一个建议框最对应的真实框的iou  [num_roi, ]
@@ -213,7 +213,7 @@ class ProposalTargetCreator(object):
         keep_index = np.append(pos_index, neg_index)
         sample_roi = R[keep_index]
 
-        if len(bboxes) != 0:
+        if len(all_boxes) != 0:
             gt_roi_loc = self.bbox2loc(sample_roi, bboxes[gt_assignment[keep_index]])
             gt_roi_loc = gt_roi_loc / np.array(self.variance)
         else:
