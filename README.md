@@ -16,7 +16,7 @@
 ## 性能情况
 | 训练数据集 | 权值文件名称 | 测试数据集 | 输入图片大小 | mAP 0.5:0.95 | mAP 0.5 |
 | :-----: | :-----: | :------: | :------: | :------: | :-----: |
-| VOC07+12 | [voc_weights_resnet.h5](https://github.com/bubbliiiing/faster-rcnn-keras/releases/download/v1.0/voc_weights_resnet.h5) | VOC-Test07 | - | - | 77.5
+| VOC07+12 | [voc_weights_resnet.h5](https://github.com/bubbliiiing/faster-rcnn-keras/releases/download/v1.0/voc_weights_resnet.h5) | VOC-Test07 | - | - | 81.16
 | VOC07+12 | [voc_weights_vgg.h5](https://github.com/bubbliiiing/faster-rcnn-keras/releases/download/v1.0/voc_weights_vgg.h5) | VOC-Test07 | - | - | 76.3
 
 ## 所需环境
@@ -25,8 +25,8 @@ keras==2.1.5
 
 ## 文件下载
 训练所需的voc_weights_resnet.h5、voc_weights_vgg.h5和主干的权值可以去百度网盘下载  
-链接: https://pan.baidu.com/s/1yWJvS6x2LAVud0GtbA5Lvg    
-提取码: v2ik    
+链接: https://pan.baidu.com/s/1O5lTyservM2SHqMTz7YciA     
+提取码: fqv2    
 
 VOC数据集下载地址如下，里面已经包括了训练集、测试集、验证集（与测试集一样），无需再次划分：  
 链接: https://pan.baidu.com/s/1YuBbBKxm2FGgTU5OfaeC5A    
