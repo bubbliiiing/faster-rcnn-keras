@@ -17,7 +17,7 @@
 | 训练数据集 | 权值文件名称 | 测试数据集 | 输入图片大小 | mAP 0.5:0.95 | mAP 0.5 |
 | :-----: | :-----: | :------: | :------: | :------: | :-----: |
 | VOC07+12 | [voc_weights_resnet.h5](https://github.com/bubbliiiing/faster-rcnn-keras/releases/download/v1.0/voc_weights_resnet.h5) | VOC-Test07 | - | - | 81.16
-| VOC07+12 | [voc_weights_vgg.h5](https://github.com/bubbliiiing/faster-rcnn-keras/releases/download/v1.0/voc_weights_vgg.h5) | VOC-Test07 | - | - | 76.3
+| VOC07+12 | [voc_weights_vgg.h5](https://github.com/bubbliiiing/faster-rcnn-keras/releases/download/v1.0/voc_weights_vgg.h5) | VOC-Test07 | - | - | 76.28
 
 ## 所需环境
 tensorflow-gpu==1.13.1  
