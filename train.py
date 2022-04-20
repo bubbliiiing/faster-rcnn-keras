@@ -369,10 +369,20 @@ if __name__ == "__main__":
 
                 train_dataloader.batch_size    = batch_size
                 val_dataloader.batch_size      = batch_size
-
-                gen     = train_dataloader.generate()
-                gen_val = val_dataloader.generate()
                 
+                gen_enqueuer.stop()
+                gen_val_enqueuer.stop()
+                        
+                #---------------------------------------#
+                #   构建多线程数据加载器
+                #---------------------------------------#
+                gen_enqueuer        = OrderedEnqueuer(train_dataloader, use_multiprocessing=True if num_workers > 1 else False, shuffle=True)
+                gen_val_enqueuer    = OrderedEnqueuer(val_dataloader, use_multiprocessing=True if num_workers > 1 else False, shuffle=True)
+                gen_enqueuer.start(workers=num_workers, max_queue_size=10)
+                gen_val_enqueuer.start(workers=num_workers, max_queue_size=10)
+                gen                 = gen_enqueuer.get()
+                gen_val             = gen_val_enqueuer.get()
+
                 UnFreeze_flag = True
                     
             lr = lr_scheduler_func(epoch)
