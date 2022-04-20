@@ -12,7 +12,7 @@ from nets.frcnn_training import (ProposalTargetCreator, classifier_cls_loss,
                                  rpn_cls_loss, rpn_smooth_l1)
 from utils.anchors import get_anchors
 from utils.callbacks import LossHistory
-from utils.dataloader import FRCNNDatasets
+from utils.dataloader import FRCNNDatasets, OrderedEnqueuer
 from utils.utils import get_classes
 from utils.utils_bbox import BBoxUtility
 from utils.utils_fit import fit_one_epoch
@@ -94,16 +94,16 @@ if __name__ == "__main__":
     #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 100，Freeze_Train = True，optimizer_type = 'adam'，Init_lr = 1e-4。（冻结）
     #           Init_Epoch = 0，UnFreeze_Epoch = 100，Freeze_Train = False，optimizer_type = 'adam'，Init_lr = 1e-4。（不冻结）
     #       SGD：
-    #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 100，Freeze_Train = True，optimizer_type = 'sgd'，Init_lr = 1e-3。（冻结）
-    #           Init_Epoch = 0，UnFreeze_Epoch = 100，Freeze_Train = False，optimizer_type = 'sgd'，Init_lr = 1e-3。（不冻结）
+    #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 100，Freeze_Train = True，optimizer_type = 'sgd'，Init_lr = 1e-2。（冻结）
+    #           Init_Epoch = 0，UnFreeze_Epoch = 100，Freeze_Train = False，optimizer_type = 'sgd'，Init_lr = 1e-2。（不冻结）
     #       其中：UnFreeze_Epoch可以在100-300之间调整。
     #   （二）从主干网络的预训练权重开始训练：
     #       Adam：
     #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 100，Freeze_Train = True，optimizer_type = 'adam'，Init_lr = 1e-4。（冻结）
     #           Init_Epoch = 0，UnFreeze_Epoch = 100，Freeze_Train = False，optimizer_type = 'adam'，Init_lr = 1e-4。（不冻结）
     #       SGD：
-    #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 150，Freeze_Train = True，optimizer_type = 'sgd'，Init_lr = 1e-3。（冻结）
-    #           Init_Epoch = 0，UnFreeze_Epoch = 150，Freeze_Train = False，optimizer_type = 'sgd'，Init_lr = 1e-3。（不冻结）
+    #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 150，Freeze_Train = True，optimizer_type = 'sgd'，Init_lr = 1e-2。（冻结）
+    #           Init_Epoch = 0，UnFreeze_Epoch = 150，Freeze_Train = False，optimizer_type = 'sgd'，Init_lr = 1e-2。（不冻结）
     #       其中：由于从主干网络的预训练权重开始训练，主干的权值不一定适合目标检测，需要更多的训练跳出局部最优解。
     #             UnFreeze_Epoch可以在150-300之间调整，YOLOV5和YOLOX均推荐使用300。
     #             Adam相较于SGD收敛的快一些。因此UnFreeze_Epoch理论上可以小一点，但依然推荐更多的Epoch。
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     #   Init_lr         模型的最大学习率
     #                   当使用Adam优化器时建议设置  Init_lr=1e-4
-    #                   当使用SGD优化器时建议设置   Init_lr=1e-3
+    #                   当使用SGD优化器时建议设置   Init_lr=1e-2
     #   Min_lr          模型的最小学习率，默认为最大学习率的0.01
     #------------------------------------------------------------------#
     Init_lr             = 1e-4
@@ -157,7 +157,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     #   optimizer_type  使用到的优化器种类，可选的有adam、sgd
     #                   当使用Adam优化器时建议设置  Init_lr=1e-4
-    #                   当使用SGD优化器时建议设置   Init_lr=1e-3
+    #                   当使用SGD优化器时建议设置   Init_lr=1e-2
     #   momentum        优化器内部使用到的momentum参数
     #------------------------------------------------------------------#
     optimizer_type      = "adam"
@@ -177,7 +177,6 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     #   num_workers     用于设置是否使用多线程读取数据，1代表关闭多线程
     #                   开启后会加快数据读取速度，但是会占用更多内存
-    #                   keras里开启多线程有些时候速度反而慢了许多
     #                   在IO为瓶颈的时候再开启多线程，即GPU运算速度远大于读取图片的速度。
     #------------------------------------------------------------------#
     num_workers         = 1
@@ -236,6 +235,7 @@ if __name__ == "__main__":
     #   提示OOM或者显存不足请调小Batch_size
     #------------------------------------------------------#
     if True:
+        UnFreeze_flag = False
         if Freeze_Train:
             freeze_layers = {'vgg' : 17, 'resnet50' : 141}[backbone]
             for i in range(freeze_layers): 
@@ -247,8 +247,6 @@ if __name__ == "__main__":
         #   如果不冻结训练的话，直接设置batch_size为Unfreeze_batch_size
         #-------------------------------------------------------------------#
         batch_size  = Freeze_batch_size if Freeze_Train else Unfreeze_batch_size
-        start_epoch = Init_Epoch
-        end_epoch   = Freeze_Epoch if Freeze_Train else UnFreeze_Epoch
         
         #-------------------------------------------------------------------#
         #   判断当前batch_size，自适应调整学习率
@@ -292,10 +290,17 @@ if __name__ == "__main__":
         train_dataloader    = FRCNNDatasets(train_lines, input_shape, anchors, batch_size, num_classes, train = True)
         val_dataloader      = FRCNNDatasets(val_lines, input_shape, anchors, batch_size, num_classes, train = False)
         
-        gen     = train_dataloader.generate()
-        gen_val = val_dataloader.generate()
+        #---------------------------------------#
+        #   构建多线程数据加载器
+        #---------------------------------------#
+        gen_enqueuer        = OrderedEnqueuer(train_dataloader, use_multiprocessing=True if num_workers > 1 else False, shuffle=True)
+        gen_val_enqueuer    = OrderedEnqueuer(val_dataloader, use_multiprocessing=True if num_workers > 1 else False, shuffle=True)
+        gen_enqueuer.start(workers=num_workers, max_queue_size=10)
+        gen_val_enqueuer.start(workers=num_workers, max_queue_size=10)
+        gen                 = gen_enqueuer.get()
+        gen_val             = gen_val_enqueuer.get()
         
-        for epoch in range(start_epoch, end_epoch):
+        for epoch in range(Init_Epoch, UnFreeze_Epoch):
             #---------------------------------------#
             #   如果模型有冻结学习部分
             #   则解冻，并设置参数
@@ -352,6 +357,5 @@ if __name__ == "__main__":
                     
             lr = lr_scheduler_func(epoch)
             K.set_value(optimizer.lr, lr)
-            
-            fit_one_epoch(model_rpn, model_all, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, end_epoch,
+            fit_one_epoch(model_rpn, model_all, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, UnFreeze_Epoch,
                     anchors, bbox_util, roi_helper, save_period, save_dir)
