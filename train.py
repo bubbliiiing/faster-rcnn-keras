@@ -5,6 +5,7 @@ import keras
 import keras.backend as K
 from keras.callbacks import TensorBoard
 from keras.optimizers import SGD, Adam
+from keras.utils.multi_gpu_utils import multi_gpu_model
 
 from nets.frcnn import get_model
 from nets.frcnn_training import (ProposalTargetCreator, classifier_cls_loss,
@@ -16,7 +17,6 @@ from utils.dataloader import FRCNNDatasets, OrderedEnqueuer
 from utils.utils import get_classes
 from utils.utils_bbox import BBoxUtility
 from utils.utils_fit import fit_one_epoch
-
 
 '''
 训练自己的目标检测模型一定需要注意以下几点：
@@ -40,6 +40,12 @@ from utils.utils_fit import fit_one_epoch
    这些都是经验上，只能靠各位同学多查询资料和自己试试了。
 '''  
 if __name__ == "__main__":
+    #---------------------------------------------------------------------#
+    #   train_gpu   训练用到的GPU
+    #               默认为第一张卡、双卡为[0, 1]、三卡为[0, 1, 2]
+    #               在使用多GPU时，每个卡上的batch为总batch除以卡的数量。
+    #---------------------------------------------------------------------#
+    train_gpu       = [0,]
     #---------------------------------------------------------------------#
     #   classes_path    指向model_data下的txt，与自己训练的数据集相关 
     #                   训练前一定要修改classes_path，使其对应自己的数据集
@@ -188,6 +194,13 @@ if __name__ == "__main__":
     train_annotation_path   = '2007_train.txt'
     val_annotation_path     = '2007_val.txt'
 
+    #------------------------------------------------------#
+    #   设置用到的显卡
+    #------------------------------------------------------#
+    os.environ["CUDA_VISIBLE_DEVICES"]  = ','.join(str(x) for x in train_gpu)
+    ngpus_per_node                      = len(train_gpu)
+    print('Number of devices: {}'.format(ngpus_per_node))
+
     #----------------------------------------------------#
     #   获取classes和anchor
     #----------------------------------------------------#
@@ -196,14 +209,21 @@ if __name__ == "__main__":
     anchors = get_anchors(input_shape, backbone, anchors_size)
 
     K.clear_session()
-    model_rpn, model_all = get_model(num_classes, backbone = backbone)
+    model_rpn_body, model_all_body = get_model(num_classes, backbone = backbone)
     if model_path != '':
         #------------------------------------------------------#
         #   载入预训练权重
         #------------------------------------------------------#
         print('Load weights {}.'.format(model_path))
-        model_rpn.load_weights(model_path, by_name=True)
-        model_all.load_weights(model_path, by_name=True)
+        model_rpn_body.load_weights(model_path, by_name=True)
+        model_all_body.load_weights(model_path, by_name=True)
+
+    if ngpus_per_node > 1:
+        model_rpn = multi_gpu_model(model_rpn_body, gpus=ngpus_per_node)
+        model_all = multi_gpu_model(model_all_body, gpus=ngpus_per_node)
+    else:
+        model_rpn = model_rpn_body
+        model_all = model_all_body
 
     time_str        = datetime.datetime.strftime(datetime.datetime.now(),'%Y_%m_%d_%H_%M_%S')
     log_dir         = os.path.join(save_dir, "loss_" + str(time_str))
@@ -239,9 +259,9 @@ if __name__ == "__main__":
         if Freeze_Train:
             freeze_layers = {'vgg' : 17, 'resnet50' : 141}[backbone]
             for i in range(freeze_layers): 
-                if type(model_all.layers[i]) != keras.layers.BatchNormalization:
-                    model_all.layers[i].trainable = False
-            print('Freeze the first {} layers of total {} layers.'.format(freeze_layers, len(model_all.layers)))
+                if type(model_all_body.layers[i]) != keras.layers.BatchNormalization:
+                    model_all_body.layers[i].trainable = False
+            print('Freeze the first {} layers of total {} layers.'.format(freeze_layers, len(model_all_body.layers)))
 
         #-------------------------------------------------------------------#
         #   如果不冻结训练的话，直接设置batch_size为Unfreeze_batch_size
@@ -323,8 +343,8 @@ if __name__ == "__main__":
                 lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch)
 
                 for i in range(freeze_layers): 
-                    if type(model_all.layers[i]) != keras.layers.BatchNormalization:
-                        model_all.layers[i].trainable = True
+                    if type(model_all_body.layers[i]) != keras.layers.BatchNormalization:
+                        model_all_body.layers[i].trainable = True
                         
                 model_rpn.compile(
                     loss = {
@@ -357,5 +377,5 @@ if __name__ == "__main__":
                     
             lr = lr_scheduler_func(epoch)
             K.set_value(optimizer.lr, lr)
-            fit_one_epoch(model_rpn, model_all, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, UnFreeze_Epoch,
+            fit_one_epoch(model_rpn, model_all, model_all_body, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, UnFreeze_Epoch,
                     anchors, bbox_util, roi_helper, save_period, save_dir)
