@@ -11,6 +11,7 @@ from random import shuffle
 import cv2
 import numpy as np
 import six
+import keras
 from keras.applications.imagenet_utils import preprocess_input
 from PIL import Image
 
@@ -22,7 +23,7 @@ except ImportError:
 from utils.utils import cvtColor
 
 
-class FRCNNDatasets():
+class FRCNNDatasets(keras.utils.Sequence):
     def __init__(self, annotation_lines, input_shape, anchors, batch_size, num_classes, train, n_sample = 256, ignore_threshold = 0.3, overlap_threshold = 0.7):
         self.annotation_lines   = annotation_lines
         self.length             = len(self.annotation_lines)
