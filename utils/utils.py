@@ -44,6 +44,15 @@ def get_new_img_size(height, width, img_min_side=600):
 
     return resized_height, resized_width
 
+def show_config(**kwargs):
+    print('Configurations:')
+    print('-' * 70)
+    print('|%25s | %40s|' % ('keys', 'values'))
+    print('-' * 70)
+    for key, value in kwargs.items():
+        print('|%25s | %40s|' % (str(key), str(value)))
+    print('-' * 70)
+    
 #-------------------------------------------------------------------------------------------------------------------------------#
 #   From https://github.com/ckyrkou/Keras_FLOP_Estimator 
 #   Fix lots of bugs
