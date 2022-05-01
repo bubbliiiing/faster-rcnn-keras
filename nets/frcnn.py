@@ -6,8 +6,8 @@ from nets.resnet import ResNet50
 from nets.vgg import VGG16
 from nets.rpn import get_rpn
 
-def get_model(num_classes, backbone, num_anchors = 9):
-    inputs      = Input(shape=(None, None, 3))
+def get_model(num_classes, backbone, num_anchors = 9, input_shape=[None, None, 3]):
+    inputs      = Input(shape=input_shape)
     roi_input   = Input(shape=(None, 4))
     
     if backbone == 'vgg':

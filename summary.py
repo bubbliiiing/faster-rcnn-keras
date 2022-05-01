@@ -2,12 +2,29 @@
 #   该部分代码用于看网络结构
 #--------------------------------------------#
 from nets.frcnn import get_model
+from utils.utils import net_flops
 
 if __name__ == "__main__":
+    input_shape = [600, 600]
     num_classes = 21
 
-    _, model = get_model(num_classes, 'vgg')
+    _, model = get_model(num_classes, 'vgg', input_shape=[input_shape[0], input_shape[1], 3])
+    #--------------------------------------------------------#
+    #   由于faster-rcnn-keras里面存在一些不可计算层
+    #   如ROIpooling
+    #   因此无法正确计算FLOPs，可参考pytorch版本
+    #--------------------------------------------------------#
+    #--------------------------------------------#
+    #   查看网络结构网络结构
+    #--------------------------------------------#
     model.summary()
-
-    for i,layer in enumerate(model.layers):
-        print(i,layer.name)
+    #--------------------------------------------#
+    #   计算网络的FLOPS
+    #--------------------------------------------#
+    net_flops(model, table=False)
+    
+    #--------------------------------------------#
+    #   获得网络每个层的名称与序号
+    #--------------------------------------------#
+    # for i,layer in enumerate(model.layers):
+    #     print(i,layer.name)

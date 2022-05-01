@@ -90,5 +90,11 @@ def fit_one_epoch(model_rpn, model_all, model_all_body, loss_history, callback, 
     loss_history.on_epoch_end([], logs)
     print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
     print('Total Loss: %.3f || Val Loss: %.3f ' % (total_loss / epoch_step, val_loss / epoch_step_val))
+    
+    #-----------------------------------------------#
+    #   保存权值
+    #-----------------------------------------------#
     if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
         model_all_body.save_weights(os.path.join(save_dir, 'ep%03d-loss%.3f-val_loss%.3f.h5' % (epoch + 1, total_loss / epoch_step, val_loss / epoch_step_val)))
+
+    model_all_body.save_weights(os.path.join(save_dir, "last_epoch_weights.h5"))
