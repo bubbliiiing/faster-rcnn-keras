@@ -143,7 +143,7 @@ class EvalCallback(keras.callbacks.Callback):
         #-------------------------------------------------------------#
         #   利用建议框获得classifier网络预测结果
         #-------------------------------------------------------------#
-        classifier_pred = self.model_all.predict([image_data, rpn_results[:, :, [1, 0, 3, 2]]])
+        classifier_pred = self.model_all.predict([image_data, rpn_results[:, :, [1, 0, 3, 2]]])[-2:]
         #-------------------------------------------------------------#
         #   利用classifier的预测结果对建议框进行解码，获得预测框
         #-------------------------------------------------------------#
