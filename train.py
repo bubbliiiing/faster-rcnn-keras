@@ -13,7 +13,7 @@ from nets.frcnn_training import (ProposalTargetCreator, classifier_cls_loss,
                                  classifier_smooth_l1, get_lr_scheduler,
                                  rpn_cls_loss, rpn_smooth_l1)
 from utils.anchors import get_anchors
-from utils.callbacks import LossHistory
+from utils.callbacks import EvalCallback, LossHistory
 from utils.dataloader import FRCNNDatasets, OrderedEnqueuer
 from utils.utils import get_classes, show_config
 from utils.utils_bbox import BBoxUtility
@@ -181,6 +181,17 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     save_dir            = 'logs'
     #------------------------------------------------------------------#
+    #   eval_flag       是否在训练时进行评估，评估对象为验证集
+    #                   安装pycocotools库后，评估体验更佳。
+    #   eval_period     代表多少个epoch评估一次，不建议频繁的评估
+    #                   评估需要消耗较多的时间，频繁评估会导致训练非常慢
+    #   此处获得的mAP会与get_map.py获得的会有所不同，原因有二：
+    #   （一）此处获得的mAP为验证集的mAP。
+    #   （二）此处设置评估参数较为保守，目的是加快评估速度。
+    #------------------------------------------------------------------#
+    eval_flag           = True
+    eval_period         = 5
+    #------------------------------------------------------------------#
     #   num_workers     用于设置是否使用多线程读取数据，1代表关闭多线程
     #                   开启后会加快数据读取速度，但是会占用更多内存
     #                   在IO为瓶颈的时候再开启多线程，即GPU运算速度远大于读取图片的速度。
@@ -225,11 +236,11 @@ if __name__ == "__main__":
         model_rpn = model_rpn_body
         model_all = model_all_body
 
+    #--------------------------------------------#
+    #   回调函数
+    #--------------------------------------------#
     time_str        = datetime.datetime.strftime(datetime.datetime.now(),'%Y_%m_%d_%H_%M_%S')
     log_dir         = os.path.join(save_dir, "loss_" + str(time_str))
-    #--------------------------------------------#
-    #   训练参数的设置
-    #--------------------------------------------#
     callback        = TensorBoard(log_dir=log_dir)
     callback.set_model(model_all)
     loss_history    = LossHistory(log_dir)
@@ -331,6 +342,12 @@ if __name__ == "__main__":
         val_dataloader      = FRCNNDatasets(val_lines, input_shape, anchors, batch_size, num_classes, train = False)
         
         #---------------------------------------#
+        #   训练时的评估数据集
+        #---------------------------------------#
+        eval_callback       = EvalCallback(model_rpn, model_all, backbone, input_shape, anchors_size, class_names, num_classes, val_lines, log_dir, \
+                                        eval_flag=eval_flag, period=eval_period)
+        
+        #---------------------------------------#
         #   构建多线程数据加载器
         #---------------------------------------#
         gen_enqueuer        = OrderedEnqueuer(train_dataloader, use_multiprocessing=True if num_workers > 1 else False, shuffle=True)
@@ -407,5 +424,5 @@ if __name__ == "__main__":
                     
             lr = lr_scheduler_func(epoch)
             K.set_value(optimizer.lr, lr)
-            fit_one_epoch(model_rpn, model_all, model_all_body, loss_history, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, UnFreeze_Epoch,
+            fit_one_epoch(model_rpn, model_all, model_all_body, loss_history, eval_callback, callback, epoch, epoch_step, epoch_step_val, gen, gen_val, UnFreeze_Epoch,
                     anchors, bbox_util, roi_helper, save_period, save_dir)
