@@ -71,20 +71,19 @@ class LossHistory(keras.callbacks.Callback):
         plt.close("all")
 
 class EvalCallback(keras.callbacks.Callback):
-    def __init__(self, model_rpn, model_all, backbone, input_shape, anchors_size, class_names, num_classes, val_lines, log_dir, cuda, \
+    def __init__(self, model_rpn, model_all, backbone, input_shape, anchors_size, class_names, num_classes, val_lines, log_dir, \
             map_out_path=".temp_map_out", max_boxes=100, confidence=0.05, nms_iou=0.5, letterbox_image=True, MINOVERLAP=0.5, eval_flag=True, period=1):
         super(EvalCallback, self).__init__()
         
         self.model_rpn          = model_rpn
         self.model_all          = model_all
         self.backbone           = backbone
-        self.anchors_size       = anchors_size
         self.input_shape        = input_shape
+        self.anchors_size       = anchors_size
         self.class_names        = class_names
         self.num_classes        = num_classes
         self.val_lines          = val_lines
         self.log_dir            = log_dir
-        self.cuda               = cuda
         self.map_out_path       = map_out_path
         self.max_boxes          = max_boxes
         self.confidence         = confidence
