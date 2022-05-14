@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from utils.utils import get_classes
 from utils.utils_map import get_coco_map, get_map
-from frcnn import frcnn
+from frcnn import FRCNN
 
     
 if __name__ == "__main__":
